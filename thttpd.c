@@ -739,6 +739,10 @@ main( int argc, char** argv )
 	    fdwatch_add_fd( hs->listen4tcp_fd, (void*) 0, FDW_READ );
 	if ( hs->listen6tcp_fd != -1 )
 	    fdwatch_add_fd( hs->listen6tcp_fd, (void*) 0, FDW_READ );
+#ifdef USE_SCTP
+	if ( hs->listensctp_fd != -1 )
+	    fdwatch_add_fd( hs->listensctp_fd, (void*) 0, FDW_READ );
+#endif
 	}
 
     /* Main loop. */
@@ -791,6 +795,18 @@ main( int argc, char** argv )
 		*/
 		continue;
 	    }
+#ifdef USE_SCTP
+	if ( hs != (httpd_server*) 0 && hs->listensctp_fd != -1 &&
+	     fdwatch_check_fd( hs->listensctp_fd ) )
+	    {
+	    if ( handle_newconnect( &tv, hs->listensctp_fd ) )
+		/* Go around the loop and do another fdwatch, rather than
+		** dropping through and processing existing connections.
+		** New connections always get priority.
+		*/
+		continue;
+	    }
+#endif
 
 	/* Find the connections that need servicing. */
 	while ( ( c = (connecttab*) fdwatch_get_next_client_data() ) != (connecttab*) -1 )
@@ -820,6 +836,10 @@ main( int argc, char** argv )
 		    fdwatch_del_fd( hs->listen4tcp_fd );
 		if ( hs->listen6tcp_fd != -1 )
 		    fdwatch_del_fd( hs->listen6tcp_fd );
+#ifdef USE_SCTP
+		if ( hs->listensctp_fd != -1 )
+		    fdwatch_del_fd( hs->listensctp_fd );
+#endif
 		httpd_unlisten( hs );
 		}
 	    }
@@ -1482,6 +1502,10 @@ shut_down( void )
 	    fdwatch_del_fd( ths->listen4tcp_fd );
 	if ( ths->listen6tcp_fd != -1 )
 	    fdwatch_del_fd( ths->listen6tcp_fd );
+#ifdef USE_SCTP
+	if ( ths->listensctp_fd != -1 )
+	    fdwatch_del_fd( ths->listensctp_fd );
+#endif
 	httpd_terminate( ths );
 	}
     mmc_term();

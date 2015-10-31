@@ -347,8 +347,17 @@ httpd_initialize(
 	hs->listen4tcp_fd = -1;
     else
 	hs->listen4tcp_fd = initialize_listen_socket( sa4P );
+#ifdef USE_SCTP
+	hs->listensctp_fd = -1; /* XXX: FIXME MT */
+#endif
     /* If we didn't get any valid sockets, fail. */
+#ifdef USE_SCTP
+    if ( hs->listen4tcp_fd == -1 &&
+	 hs->listen6tcp_fd == -1 &&
+	 hs->listensctp_fd == -1 )
+#else
     if ( hs->listen4tcp_fd == -1 && hs->listen6tcp_fd == -1 )
+#endif
 	{
 	free_httpd_server( hs );
 	return (httpd_server*) 0;
@@ -483,6 +492,13 @@ httpd_unlisten( httpd_server* hs )
 	(void) close( hs->listen6tcp_fd );
 	hs->listen6tcp_fd = -1;
 	}
+#ifdef USE_SCTP
+    if ( hs->listensctp_fd != -1 )
+	{
+	(void) close( hs->listensctp_fd );
+	hs->listensctp_fd = -1;
+	}
+#endif
     }
 
 

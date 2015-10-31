@@ -33,13 +33,18 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#ifdef HAVE_NETINET_SCTP_H
+#include <netinet/sctp.h>
+#endif
 #include <arpa/inet.h>
 #include <netdb.h>
 
 #if defined(AF_INET6) && defined(IN6_IS_ADDR_V4MAPPED)
 #define USE_IPV6
 #endif
-
+#ifdef HAVE_NETINET_SCTP_H
+#define USE_SCTP
+#endif
 
 /* A few convenient defines. */
 
@@ -80,6 +85,9 @@ typedef struct {
     int max_age;
     char* cwd;
     int listen4tcp_fd, listen6tcp_fd;
+#ifdef USE_SCTP
+    int listensctp_fd;
+#endif
     int no_log;
     FILE* logfp;
     int no_symlink_check;
