@@ -735,10 +735,10 @@ main( int argc, char** argv )
 
     if ( hs != (httpd_server*) 0 )
 	{
-	if ( hs->listen4_fd != -1 )
-	    fdwatch_add_fd( hs->listen4_fd, (void*) 0, FDW_READ );
-	if ( hs->listen6_fd != -1 )
-	    fdwatch_add_fd( hs->listen6_fd, (void*) 0, FDW_READ );
+	if ( hs->listen4tcp_fd != -1 )
+	    fdwatch_add_fd( hs->listen4tcp_fd, (void*) 0, FDW_READ );
+	if ( hs->listen6tcp_fd != -1 )
+	    fdwatch_add_fd( hs->listen6tcp_fd, (void*) 0, FDW_READ );
 	}
 
     /* Main loop. */
@@ -771,20 +771,20 @@ main( int argc, char** argv )
 	    }
 
 	/* Is it a new connection? */
-	if ( hs != (httpd_server*) 0 && hs->listen6_fd != -1 &&
-	     fdwatch_check_fd( hs->listen6_fd ) )
+	if ( hs != (httpd_server*) 0 && hs->listen6tcp_fd != -1 &&
+	     fdwatch_check_fd( hs->listen6tcp_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen6_fd ) )
+	    if ( handle_newconnect( &tv, hs->listen6tcp_fd ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
 		*/
 		continue;
 	    }
-	if ( hs != (httpd_server*) 0 && hs->listen4_fd != -1 &&
-	     fdwatch_check_fd( hs->listen4_fd ) )
+	if ( hs != (httpd_server*) 0 && hs->listen4tcp_fd != -1 &&
+	     fdwatch_check_fd( hs->listen4tcp_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen4_fd ) )
+	    if ( handle_newconnect( &tv, hs->listen4tcp_fd ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
@@ -816,10 +816,10 @@ main( int argc, char** argv )
 	    terminate = 1;
 	    if ( hs != (httpd_server*) 0 )
 		{
-		if ( hs->listen4_fd != -1 )
-		    fdwatch_del_fd( hs->listen4_fd );
-		if ( hs->listen6_fd != -1 )
-		    fdwatch_del_fd( hs->listen6_fd );
+		if ( hs->listen4tcp_fd != -1 )
+		    fdwatch_del_fd( hs->listen4tcp_fd );
+		if ( hs->listen6tcp_fd != -1 )
+		    fdwatch_del_fd( hs->listen6tcp_fd );
 		httpd_unlisten( hs );
 		}
 	    }
@@ -1478,10 +1478,10 @@ shut_down( void )
 	{
 	httpd_server* ths = hs;
 	hs = (httpd_server*) 0;
-	if ( ths->listen4_fd != -1 )
-	    fdwatch_del_fd( ths->listen4_fd );
-	if ( ths->listen6_fd != -1 )
-	    fdwatch_del_fd( ths->listen6_fd );
+	if ( ths->listen4tcp_fd != -1 )
+	    fdwatch_del_fd( ths->listen4tcp_fd );
+	if ( ths->listen6tcp_fd != -1 )
+	    fdwatch_del_fd( ths->listen6tcp_fd );
 	httpd_terminate( ths );
 	}
     mmc_term();
