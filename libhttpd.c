@@ -472,6 +472,9 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 #ifdef USE_IPV6
     int off;
 #endif
+#if defined( __FreeBSD__ ) && ( __FreeBSD_version >= 1001000 )
+    struct sctp_assoc_value assoc_value;
+#endif
 
     if ( ( sa4P == (httpd_sockaddr*) 0 ) && ( sa6P == (httpd_sockaddr*) 0 ) )
 	{
@@ -527,6 +530,83 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	(void) close( listen_fd );
 	return -1;
 	}
+
+#if defined( __FreeBSD__ ) && ( __FreeBSD_version >= 1001000 )
+    assoc_value.assoc_id = 0;
+    assoc_value.assoc_value = 0;
+    /* Disable the Explicit Congestion Notification extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_ECN_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_ECN_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    /* Disable the Partial Reliability extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_PR_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_PR_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    /* Disable the Address Reconfiguration extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_ASCONF_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_ASCONF_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    /* Disable the Address Reconfiguration extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_ASCONF_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_ASCONF_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    /* Disable the Authentication extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_AUTH_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_AUTH_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    /* Disable the Stream Reconfiguration extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_RECONFIG_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_RECONFIG_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    /* Disable the NR-SACK extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_NRSACK_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_NRSACK_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    /* Disable the Packet Drop Report extension */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_PKTDROP_SUPPORTED, (char*) &assoc_value,
+	     sizeof(assoc_value) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_PKTDROP_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+#endif
 
     /* Bind to it. */
     if ( sa6P != (httpd_sockaddr*) 0 )
