@@ -120,6 +120,9 @@ typedef int socklen_t;
 static void check_options( void );
 static void free_httpd_server( httpd_server* hs );
 static int initialize_listen_socket( httpd_sockaddr* saP );
+#ifdef USE_SCTP
+static int initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P );
+#endif
 static void add_response( httpd_conn* hc, char* str );
 static void send_mime( httpd_conn* hc, int status, char* title, char* encodings, char* extraheads, char* type, off_t length, time_t mod );
 static void send_response( httpd_conn* hc, int status, char* title, char* extraheads, char* form, char* arg );
@@ -348,7 +351,7 @@ httpd_initialize(
     else
 	hs->listen4tcp_fd = initialize_listen_socket( sa4P );
 #ifdef USE_SCTP
-	hs->listensctp_fd = -1; /* XXX: FIXME MT */
+	hs->listensctp_fd = initialize_listen_sctp_socket( sa4P, sa6P );
 #endif
     /* If we didn't get any valid sockets, fail. */
 #ifdef USE_SCTP
@@ -459,6 +462,123 @@ initialize_listen_socket( httpd_sockaddr* saP )
     return listen_fd;
     }
 
+#ifdef USE_SCTP
+static int
+initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
+    {
+    struct sctp_initmsg initmsg;
+    int listen_fd;
+    int flags;
+#ifdef USE_IPV6
+    int off;
+#endif
+
+    if ( ( sa4P == (httpd_sockaddr*) 0 ) && ( sa6P == (httpd_sockaddr*) 0 ) )
+	{
+	syslog( LOG_CRIT, "no addresses for listen socket" );
+	return -1;
+	}
+    /* Check sockaddr. */
+    if ( ( sa4P != (httpd_sockaddr*) 0 ) && ! sockaddr_check( sa4P ) )
+	{
+	syslog( LOG_CRIT, "unknown sockaddr family on listen socket" );
+	return -1;
+	}
+    if ( ( sa6P != (httpd_sockaddr*) 0 ) && ! sockaddr_check( sa6P ) )
+	{
+	syslog( LOG_CRIT, "unknown sockaddr family on listen socket" );
+	return -1;
+	}
+
+    /* Create socket. */
+    listen_fd = socket( sa6P ? AF_INET6 : AF_INET, SOCK_STREAM, IPPROTO_SCTP );
+    if ( listen_fd < 0 )
+	{
+	syslog( LOG_CRIT, "SCTP socket - %m");
+	return -1;
+	}
+    (void) fcntl( listen_fd, F_SETFD, 1 );
+
+#ifdef USE_IPV6
+    if ( ( sa4P != (httpd_sockaddr*) 0 ) && ( sa6P != (httpd_sockaddr*) 0 ) )
+	{
+	off = 0;
+	if ( setsockopt(
+		 listen_fd, IPPROTO_IPV6, IPV6_V6ONLY, (char*) &off,
+		 sizeof(off) ) < 0 )
+	    {
+	    syslog( LOG_CRIT, "setsockopt IPV6_ONLY - %m" );
+	    (void) close( listen_fd );
+	    return -1;
+	    }
+	}
+#endif
+
+    /* Ensure an appropriate number of stream will be negotated. */
+    initmsg.sinit_num_ostreams = 1;   /* For now, only a single stream */
+    initmsg.sinit_max_instreams = 1;  /* For now, only a single stream */
+    initmsg.sinit_max_attempts = 0;   /* Use default */
+    initmsg.sinit_max_init_timeo = 0; /* Use default */
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_INITMSG, (char*) &initmsg,
+	     sizeof(initmsg) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_INITMSG - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+
+    /* Bind to it. */
+    if ( sa6P != (httpd_sockaddr*) 0 )
+	if ( sctp_bindx( listen_fd, &sa6P->sa, 1, SCTP_BINDX_ADD_ADDR) < 0 )
+	    {
+	    syslog(
+		LOG_CRIT, "sctp_bindx %.80s - %m", httpd_ntoa( sa6P ) );
+	    (void) close( listen_fd );
+	    return -1;
+	    }
+
+    if ( sa4P != (httpd_sockaddr*) 0 )
+	{
+#ifdef USE_IPV6
+	if ( (sa6P != (httpd_sockaddr*) 0 ) &&
+	     !IN6_IS_ADDR_UNSPECIFIED(&(sa6P->sa_in6.sin6_addr)) )
+#endif
+	    if ( sctp_bindx( listen_fd, &sa4P->sa, 1, SCTP_BINDX_ADD_ADDR) < 0 )
+		{
+		syslog(
+		    LOG_CRIT, "sctp_bindx %.80s - %m", httpd_ntoa( sa4P ) );
+		(void) close( listen_fd );
+		return -1;
+		}
+	}
+
+    /* Set the listen file descriptor to no-delay / non-blocking mode. */
+    flags = fcntl( listen_fd, F_GETFL, 0 );
+    if ( flags == -1 )
+	{
+	syslog( LOG_CRIT, "fcntl F_GETFL - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+    if ( fcntl( listen_fd, F_SETFL, flags | O_NDELAY ) < 0 )
+	{
+	syslog( LOG_CRIT, "fcntl O_NDELAY - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+
+    /* Start a listen going. */
+    if ( listen( listen_fd, LISTEN_BACKLOG ) < 0 )
+	{
+	syslog( LOG_CRIT, "listen - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+
+    return listen_fd;
+    }
+#endif
 
 void
 httpd_set_logfp( httpd_server* hs, FILE* logfp )
