@@ -1,6 +1,6 @@
 /* libhttpd.c - HTTP protocol library
 **
-** Copyright © 1995,1998,1999,2000,2001,2015 by
+** Copyright Â© 1995,1998,1999,2000,2001,2015 by
 ** Jef Poskanzer <jef@mail.acme.com>. All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -549,15 +549,6 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	     sizeof(assoc_value) ) < 0 )
 	{
 	syslog( LOG_CRIT, "setsockopt SCTP_PR_SUPPORTED - %m" );
-	(void) close( listen_fd );
-	return -1;
-	}
-    /* Disable the Address Reconfiguration extension */
-    if ( setsockopt(
-	     listen_fd, IPPROTO_SCTP, SCTP_ASCONF_SUPPORTED, (char*) &assoc_value,
-	     sizeof(assoc_value) ) < 0 )
-	{
-	syslog( LOG_CRIT, "setsockopt SCTP_ASCONF_SUPPORTED - %m" );
 	(void) close( listen_fd );
 	return -1;
 	}
