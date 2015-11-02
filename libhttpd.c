@@ -343,23 +343,23 @@ httpd_initialize(
     ** v4, but in Linux if you bind a v4 socket first then the v6 bind fails.
     */
     if ( sa6P == (httpd_sockaddr*) 0 )
-	hs->listen6tcp_fd = -1;
+	hs->listen6_fd = -1;
     else
-	hs->listen6tcp_fd = initialize_listen_socket( sa6P );
+	hs->listen6_fd = initialize_listen_socket( sa6P );
     if ( sa4P == (httpd_sockaddr*) 0 )
-	hs->listen4tcp_fd = -1;
+	hs->listen4_fd = -1;
     else
-	hs->listen4tcp_fd = initialize_listen_socket( sa4P );
+	hs->listen4_fd = initialize_listen_socket( sa4P );
 #ifdef USE_SCTP
 	hs->listensctp_fd = initialize_listen_sctp_socket( sa4P, sa6P );
 #endif
     /* If we didn't get any valid sockets, fail. */
 #ifdef USE_SCTP
-    if ( hs->listen4tcp_fd == -1 &&
-	 hs->listen6tcp_fd == -1 &&
+    if ( hs->listen4_fd == -1 &&
+	 hs->listen6_fd == -1 &&
 	 hs->listensctp_fd == -1 )
 #else
-    if ( hs->listen4tcp_fd == -1 && hs->listen6tcp_fd == -1 )
+    if ( hs->listen4_fd == -1 && hs->listen6_fd == -1 )
 #endif
 	{
 	free_httpd_server( hs );
@@ -376,7 +376,7 @@ httpd_initialize(
     else
 	syslog(
 	    LOG_NOTICE, "%.80s starting on %.80s, port %d", SERVER_SOFTWARE,
-	    httpd_ntoa( hs->listen4tcp_fd != -1 ? sa4P : sa6P ),
+	    httpd_ntoa( hs->listen4_fd != -1 ? sa4P : sa6P ),
 	    (int) hs->port );
     return hs;
     }
@@ -682,15 +682,15 @@ httpd_terminate( httpd_server* hs )
 void
 httpd_unlisten( httpd_server* hs )
     {
-    if ( hs->listen4tcp_fd != -1 )
+    if ( hs->listen4_fd != -1 )
 	{
-	(void) close( hs->listen4tcp_fd );
-	hs->listen4tcp_fd = -1;
+	(void) close( hs->listen4_fd );
+	hs->listen4_fd = -1;
 	}
-    if ( hs->listen6tcp_fd != -1 )
+    if ( hs->listen6_fd != -1 )
 	{
-	(void) close( hs->listen6tcp_fd );
-	hs->listen6tcp_fd = -1;
+	(void) close( hs->listen6_fd );
+	hs->listen6_fd = -1;
 	}
 #ifdef USE_SCTP
     if ( hs->listensctp_fd != -1 )

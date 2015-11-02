@@ -84,7 +84,7 @@ typedef struct {
     char* p3p;
     int max_age;
     char* cwd;
-    int listen4tcp_fd, listen6tcp_fd;
+    int listen4_fd, listen6_fd;
 #ifdef USE_SCTP
     int listensctp_fd;
 #endif
