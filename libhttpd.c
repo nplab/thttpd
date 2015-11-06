@@ -894,7 +894,14 @@ send_mime( httpd_conn* hc, int status, char* title, char* encodings, char* extra
 	    (void) my_snprintf( buf, sizeof(buf), "P3P: %s\015\012", hc->hs->p3p );
 	    add_response( hc, buf );
 	    }
-	if ( hc->hs->max_age >= 0 )
+
+    if ( hc->hs->max_age == 0 )
+        {
+        (void) my_snprintf( buf, sizeof(buf),
+        "Cache-Control: no-cache, no-store, must-revalidate\015\012Pragma: no-cache\015\012Expires: 0\015\012");
+        add_response( hc, buf );
+        }
+	else if ( hc->hs->max_age > 0 )
 	    {
 	    expires = now + hc->hs->max_age;
 	    (void) strftime(
