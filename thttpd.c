@@ -134,6 +134,9 @@ static httpd_server* hs = (httpd_server*) 0;
 int terminate = 0;
 time_t start_time, stats_time;
 long stats_connections;
+#ifdef USE_SCTP
+long stats_associations;
+#endif
 off_t stats_bytes;
 int stats_simultaneous;
 
@@ -677,6 +680,9 @@ main( int argc, char** argv )
 #endif /* STATS_TIME */
     start_time = stats_time = time( (time_t*) 0 );
     stats_connections = 0;
+#ifdef USE_SCTP
+    stats_associations = 0;
+#endif
     stats_bytes = 0;
     stats_simultaneous = 0;
 
@@ -1590,7 +1596,14 @@ handle_newconnect( struct timeval* tvP, int listen_fd )
 
 	fdwatch_add_fd( c->hc->conn_fd, c, FDW_READ );
 
+#ifdef USE_SCTP
+	if ( c->hc->is_sctp)
+	    ++stats_associations;
+	else
+	    ++stats_connections;
+#else
 	++stats_connections;
+#endif
 	if ( num_connects > stats_simultaneous )
 	    stats_simultaneous = num_connects;
 	}
@@ -2195,11 +2208,21 @@ thttpd_logstats( long secs )
     {
     if ( secs > 0 )
 	syslog( LOG_NOTICE,
+#ifdef USE_SCTP
+	    "  thttpd - %ld connections (%g/sec), %ld associations (%g/sec), %d max simultaneous, %lld bytes (%g/sec), %d httpd_conns allocated",
+#else
 	    "  thttpd - %ld connections (%g/sec), %d max simultaneous, %lld bytes (%g/sec), %d httpd_conns allocated",
+#endif
 	    stats_connections, (float) stats_connections / secs,
+#ifdef USE_SCTP
+	    stats_associations, (float) stats_associations / secs,
+#endif
 	    stats_simultaneous, (long long) stats_bytes,
 	    (float) stats_bytes / secs, httpd_conn_count );
     stats_connections = 0;
+#ifdef USE_SCTP
+    stats_associations = 0;
+#endif
     stats_bytes = 0;
     stats_simultaneous = 0;
     }

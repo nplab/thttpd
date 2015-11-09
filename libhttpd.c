@@ -1887,6 +1887,9 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc )
     {
     httpd_sockaddr sa;
     socklen_t sz;
+#ifdef USE_SCTP
+    int protocol;
+#endif
 
     if ( ! hc->initialized )
 	{
@@ -1989,6 +1992,13 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc )
     hc->keep_alive = 0;
     hc->should_linger = 0;
     hc->file_address = (char*) 0;
+#ifdef USE_SCTP
+    sz = (socklen_t)sizeof(int);
+    protocol = 0;
+    (void) getsockopt(hc->conn_fd, SOL_SOCKET, SO_PROTOCOL, &protocol, &sz);
+    if ( protocol == IPPROTO_SCTP )
+	hc->is_sctp = 1;
+#endif
     return GC_OK;
     }
 

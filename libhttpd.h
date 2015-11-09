@@ -152,6 +152,9 @@ typedef struct {
     int should_linger;
     struct stat sb;
     int conn_fd;
+#ifdef USE_SCTP
+    int is_sctp;
+#endif
     char* file_address;
     } httpd_conn;
 
