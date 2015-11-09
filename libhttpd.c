@@ -4208,8 +4208,14 @@ make_log_entry( httpd_conn* hc, struct timeval* nowP )
 	    "%s %c%04d", date_nozone, sign, zone );
 	/* And write the log entry. */
 	(void) fprintf( hc->hs->logfp,
+#ifdef USE_SCTP
+	    "%.80s %.4s - %.80s [%s] \"%.80s %.300s %.80s\" %d %s \"%.200s\" \"%.200s\"\n",
+	    httpd_ntoa( &hc->client_addr ), hc->is_sctp ? "SCTP" : " TCP",
+#else
 	    "%.80s - %.80s [%s] \"%.80s %.300s %.80s\" %d %s \"%.200s\" \"%.200s\"\n",
-	    httpd_ntoa( &hc->client_addr ), ru, date,
+	    httpd_ntoa( &hc->client_addr ),
+#endif
+	    ru, date,
 	    httpd_method_str( hc->method ), url, hc->protocol,
 	    hc->status, bytes, hc->referrer, hc->useragent );
 #ifdef FLUSH_LOG_EVERY_TIME
@@ -4218,9 +4224,14 @@ make_log_entry( httpd_conn* hc, struct timeval* nowP )
 	}
     else
 	syslog( LOG_INFO,
+#ifdef USE_SCTP
+	    "%.80s %.4s - %.80s \"%.80s %.200s %.80s\" %d %s \"%.200s\" \"%.200s\"",
+	    httpd_ntoa( &hc->client_addr ), hc->is_sctp ? "SCTP" : " TCP",
+#else
 	    "%.80s - %.80s \"%.80s %.200s %.80s\" %d %s \"%.200s\" \"%.200s\"",
-	    httpd_ntoa( &hc->client_addr ), ru,
-	    httpd_method_str( hc->method ), url, hc->protocol,
+	    httpd_ntoa( &hc->client_addr ),
+#endif
+	    ru, httpd_method_str( hc->method ), url, hc->protocol,
 	    hc->status, bytes, hc->referrer, hc->useragent );
     }
 
