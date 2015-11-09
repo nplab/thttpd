@@ -154,6 +154,8 @@ typedef struct {
     int conn_fd;
 #ifdef USE_SCTP
     int is_sctp;
+    unsigned int no_i_streams;
+    unsigned int no_o_streams;
 #endif
     char* file_address;
     } httpd_conn;
