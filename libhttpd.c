@@ -1998,6 +1998,8 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc )
     (void) getsockopt(hc->conn_fd, SOL_SOCKET, SO_PROTOCOL, &protocol, &sz);
     if ( protocol == IPPROTO_SCTP )
 	hc->is_sctp = 1;
+    else
+	hc->is_sctp = 0;
 #endif
     return GC_OK;
     }
