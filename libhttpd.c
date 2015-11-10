@@ -4233,8 +4233,12 @@ make_log_entry( httpd_conn* hc, struct timeval* nowP )
 	/* And write the log entry. */
 	(void) fprintf( hc->hs->logfp,
 #ifdef USE_SCTP
-	    "%.80s %.4s - %.80s [%s] \"%.80s %.300s %.80s\" %d %s \"%.200s\" \"%.200s\"\n",
-	    httpd_ntoa( &hc->client_addr ), hc->is_sctp ? "SCTP" : " TCP",
+	    "%.80s:%d %.4s - %.80s [%s] \"%.80s %.300s %.80s\" %d %s \"%.200s\" \"%.200s\"\n",
+	    httpd_ntoa( &hc->client_addr ),
+	    hc->client_addr.sa.sa_family == AF_INET ?
+	      ntohs(hc->client_addr.sa_in.sin_port) :
+	      ntohs(hc->client_addr.sa_in6.sin6_port),
+	    hc->is_sctp ? "SCTP" : " TCP",
 #else
 	    "%.80s - %.80s [%s] \"%.80s %.300s %.80s\" %d %s \"%.200s\" \"%.200s\"\n",
 	    httpd_ntoa( &hc->client_addr ),
@@ -4249,8 +4253,12 @@ make_log_entry( httpd_conn* hc, struct timeval* nowP )
     else
 	syslog( LOG_INFO,
 #ifdef USE_SCTP
-	    "%.80s %.4s - %.80s \"%.80s %.200s %.80s\" %d %s \"%.200s\" \"%.200s\"",
-	    httpd_ntoa( &hc->client_addr ), hc->is_sctp ? "SCTP" : " TCP",
+	    "%.80s:%d %.4s - %.80s \"%.80s %.200s %.80s\" %d %s \"%.200s\" \"%.200s\"",
+	    httpd_ntoa( &hc->client_addr ),
+	    hc->client_addr.sa.sa_family == AF_INET ?
+	      ntohs(hc->client_addr.sa_in.sin_port) :
+	      ntohs(hc->client_addr.sa_in6.sin6_port),
+	    hc->is_sctp ? "SCTP" : " TCP",
 #else
 	    "%.80s - %.80s \"%.80s %.200s %.80s\" %d %s \"%.200s\" \"%.200s\"",
 	    httpd_ntoa( &hc->client_addr ),
