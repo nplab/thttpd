@@ -2354,7 +2354,7 @@ httpd_parse_request( httpd_conn* hc )
 		cp = &buf[5];
 		cp += strspn( cp, " \t" );
 		hc->hdrhost = cp;
-		cp = strchr( hc->hdrhost, ':' );
+		cp = strrchr( hc->hdrhost, ':' );
 		if ( cp != (char*) 0 )
 		    *cp = '\0';
 		if ( strchr( hc->hdrhost, '/' ) != (char*) 0 || hc->hdrhost[0] == '.' )
