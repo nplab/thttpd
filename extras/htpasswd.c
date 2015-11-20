@@ -16,6 +16,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef HAVE_CRYPT_H
+#include <crypt.h>
+#endif
+
 #define LF 10
 #define CR 13
 
