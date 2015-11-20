@@ -1887,12 +1887,11 @@ expand_symlinks( char* path, char** restP, int no_symlink_check, int tildemapped
 
 
 int
-httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc )
+httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
     {
     httpd_sockaddr sa;
     socklen_t sz;
 #ifdef USE_SCTP
-    int protocol;
     struct sctp_status status;
 #endif
 
@@ -1998,17 +1997,9 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc )
     hc->should_linger = 0;
     hc->file_address = (char*) 0;
 #ifdef USE_SCTP
-    sz = (socklen_t)sizeof(int);
-    if ( getsockopt(hc->conn_fd, SOL_SOCKET, SO_PROTOCOL, &protocol, &sz) < 0 )
+    hc->is_sctp = is_sctp;
+    if ( is_sctp )
 	{
-	syslog( LOG_CRIT, "setsockopt SO_PROTOCOL - %m" );
-	close( hc->conn_fd );
-	hc->conn_fd = -1;
-	return GC_FAIL;
-	}
-    if ( protocol == IPPROTO_SCTP )
-	{
-	hc->is_sctp = 1;
 	sz = (socklen_t)sizeof(struct sctp_status);
 	if ( getsockopt(hc->conn_fd, IPPROTO_SCTP, SCTP_STATUS, &status, &sz) < 0 )
 	    {
@@ -2022,7 +2013,6 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc )
 	}
     else
 	{
-	hc->is_sctp = 0;
 	hc->no_i_streams = 0;
 	hc->no_o_streams = 0;
 	}

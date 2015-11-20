@@ -211,7 +211,8 @@ void httpd_terminate( httpd_server* hs );
 ** The caller is also responsible for setting initialized to zero before the
 ** first call using each different httpd_conn.
 */
-int httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc );
+int httpd_get_conn(
+    httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp );
 #define GC_FAIL 0
 #define GC_OK 1
 #define GC_NO_MORE 2
