@@ -153,7 +153,7 @@ static char* e_strdup( char* oldstr );
 static void lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockaddr* sa6P, size_t sa6_len, int* gotv6P );
 static void read_throttlefile( char* tf );
 static void shut_down( void );
-static int handle_newconnect( struct timeval* tvP, int listen_fd );
+static int handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp );
 static void handle_read( connecttab* c, struct timeval* tvP );
 static void handle_send( connecttab* c, struct timeval* tvP );
 static void handle_linger( connecttab* c, struct timeval* tvP );
@@ -784,7 +784,7 @@ main( int argc, char** argv )
 	if ( hs != (httpd_server*) 0 && hs->listen6_fd != -1 &&
 	     fdwatch_check_fd( hs->listen6_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen6_fd ) )
+	    if ( handle_newconnect( &tv, hs->listen6_fd, 0 ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
@@ -794,7 +794,7 @@ main( int argc, char** argv )
 	if ( hs != (httpd_server*) 0 && hs->listen4_fd != -1 &&
 	     fdwatch_check_fd( hs->listen4_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen4_fd ) )
+	    if ( handle_newconnect( &tv, hs->listen4_fd, 0 ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
@@ -805,7 +805,7 @@ main( int argc, char** argv )
 	if ( hs != (httpd_server*) 0 && hs->listensctp_fd != -1 &&
 	     fdwatch_check_fd( hs->listensctp_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listensctp_fd ) )
+	    if ( handle_newconnect( &tv, hs->listensctp_fd, 1 ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
@@ -1523,7 +1523,7 @@ shut_down( void )
 
 
 static int
-handle_newconnect( struct timeval* tvP, int listen_fd )
+handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
     {
     connecttab* c;
     ClientData client_data;
@@ -1566,7 +1566,7 @@ handle_newconnect( struct timeval* tvP, int listen_fd )
 	    }
 
 	/* Get the connection. */
-	switch ( httpd_get_conn( hs, listen_fd, c->hc ) )
+	switch ( httpd_get_conn( hs, listen_fd, c->hc, is_sctp ) )
 	    {
 	    /* Some error happened.  Run the timers, then the
 	    ** existing connections.  Maybe the error will clear.
