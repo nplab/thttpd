@@ -3432,14 +3432,13 @@ make_argp( httpd_conn* hc )
 static void
 cgi_interpose_input( httpd_conn* hc, int wfd )
     {
-    size_t c;
-    ssize_t r;
+    ssize_t c, r;
     char buf[1024];
 
     c = hc->read_idx - hc->checked_idx;
     if ( c > 0 )
 	{
-	if ( httpd_write_fully( wfd, &(hc->read_buf[hc->checked_idx]), c ) != c )
+	if ( httpd_write_fully( wfd, &(hc->read_buf[hc->checked_idx]), (size_t)c ) != c )
 	    return;
 	}
     while ( c < hc->contentlength )
@@ -3493,7 +3492,7 @@ post_post_garbage_hack( httpd_conn* hc )
 static void
 cgi_interpose_output( httpd_conn* hc, int rfd )
     {
-    int r;
+    ssize_t r;
     char buf[1024];
     size_t headers_size, headers_len;
     char* headers;
@@ -4474,15 +4473,15 @@ atoll( const char* str )
 
 
 /* Read the requested buffer completely, accounting for interruptions. */
-int
+ssize_t
 httpd_read_fully( int fd, void* buf, size_t nbytes )
     {
-    int nread;
+    size_t nread;
 
     nread = 0;
     while ( nread < nbytes )
 	{
-	int r;
+	ssize_t r;
 
 	r = read( fd, (char*) buf + nread, nbytes - nread );
 	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
@@ -4502,15 +4501,15 @@ httpd_read_fully( int fd, void* buf, size_t nbytes )
 
 
 /* Write the requested buffer completely, accounting for interruptions. */
-int
+ssize_t
 httpd_write_fully( int fd, const char* buf, size_t nbytes )
     {
-    int nwritten;
+    size_t nwritten;
 
     nwritten = 0;
     while ( nwritten < nbytes )
 	{
-	int r;
+	ssize_t r;
 
 	r = write( fd, buf + nwritten, nbytes - nwritten );
 	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
