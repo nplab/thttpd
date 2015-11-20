@@ -476,7 +476,7 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 #ifdef USE_IPV6
     int off;
 #endif
-#if defined( __FreeBSD__ ) && ( __FreeBSD_version >= 1001000 )
+#if defined(SCTP_ECN_SUPPORTED) || defined(SCTP_PR_SUPPORTED) || defined(SCTP_ASCONF_SUPPORTED) || defined(SCTP_AUTH_SUPPORTED) || defined(SCTP_RECONFIG_SUPPORTED) || defined(SCTP_NRSACK_SUPPORTED) || defined(SCTP_PKTDROP_SUPPORTED)
     struct sctp_assoc_value assoc_value;
 #endif
 
@@ -535,9 +535,11 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	return -1;
 	}
 
-#if defined( __FreeBSD__ ) && ( __FreeBSD_version >= 1001000 )
+#if defined(SCTP_ECN_SUPPORTED) || defined(SCTP_PR_SUPPORTED) || defined(SCTP_ASCONF_SUPPORTED) || defined(SCTP_AUTH_SUPPORTED) || defined(SCTP_RECONFIG_SUPPORTED) || defined(SCTP_NRSACK_SUPPORTED) || defined(SCTP_PKTDROP_SUPPORTED)
     assoc_value.assoc_id = 0;
     assoc_value.assoc_value = 0;
+#endif
+#if defined(SCTP_ECN_SUPPORTED)
     /* Disable the Explicit Congestion Notification extension */
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_ECN_SUPPORTED, (char*) &assoc_value,
@@ -547,6 +549,8 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	(void) close( listen_fd );
 	return -1;
 	}
+#endif
+#if defined(SCTP_PR_SUPPORTED)
     /* Disable the Partial Reliability extension */
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_PR_SUPPORTED, (char*) &assoc_value,
@@ -556,6 +560,8 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	(void) close( listen_fd );
 	return -1;
 	}
+#endif
+#if defined(SCTP_ASCONF_SUPPORTED)
     /* Disable the Address Reconfiguration extension */
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_ASCONF_SUPPORTED, (char*) &assoc_value,
@@ -565,6 +571,8 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	(void) close( listen_fd );
 	return -1;
 	}
+#endif
+#if defined(SCTP_AUTH_SUPPORTED)
     /* Disable the Authentication extension */
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_AUTH_SUPPORTED, (char*) &assoc_value,
@@ -574,6 +582,8 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	(void) close( listen_fd );
 	return -1;
 	}
+#endif
+#if defined(SCTP_RECONFIG_SUPPORTED)
     /* Disable the Stream Reconfiguration extension */
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_RECONFIG_SUPPORTED, (char*) &assoc_value,
@@ -583,6 +593,8 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	(void) close( listen_fd );
 	return -1;
 	}
+#endif
+#if defined(SCTP_NRSACK_SUPPORTED)
     /* Disable the NR-SACK extension */
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_NRSACK_SUPPORTED, (char*) &assoc_value,
@@ -592,6 +604,8 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	(void) close( listen_fd );
 	return -1;
 	}
+#endif
+#if defined(SCTP_PKTDROP_SUPPORTED)
     /* Disable the Packet Drop Report extension */
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_PKTDROP_SUPPORTED, (char*) &assoc_value,
