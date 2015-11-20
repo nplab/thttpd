@@ -113,6 +113,8 @@ AC_REPLACE_FUNCS(strerror)
 AC_CHECK_FUNCS(waitpid vsnprintf daemon setsid setlogin getaddrinfo getnameinfo gai_strerror kqueue sigset atoll)
 AC_FUNC_MMAP
 
+AC_CHECK_FUNC(sctp_bindx, , AC_CHECK_LIB(sctp, sctp_bindx))
+
 case "$target_os" in
 solaris*)
 	dnl Solaris's select() is a bad wrapper routine.
