@@ -2017,7 +2017,7 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 	sz = (socklen_t)sizeof(struct sctp_status);
 	if ( getsockopt(hc->conn_fd, IPPROTO_SCTP, SCTP_STATUS, &status, &sz) < 0 )
 	    {
-	    syslog( LOG_CRIT, "setsockopt SCTP_STATUS - %m" );
+	    syslog( LOG_CRIT, "getsockopt SCTP_STATUS - %m" );
 	    close( hc->conn_fd );
 	    hc->conn_fd = -1;
 	    return GC_FAIL;
