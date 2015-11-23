@@ -630,8 +630,9 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
     if ( sa4P != (httpd_sockaddr*) 0 )
 	{
 #ifdef USE_IPV6
-	if ( (sa6P != (httpd_sockaddr*) 0 ) &&
-	     !IN6_IS_ADDR_UNSPECIFIED(&(sa6P->sa_in6.sin6_addr)) )
+	if ( (sa6P == (httpd_sockaddr*) 0) ||
+	     ((sa6P != (httpd_sockaddr*) 0) &&
+	      !IN6_IS_ADDR_UNSPECIFIED(&(sa6P->sa_in6.sin6_addr))) )
 #endif
 	    if ( sctp_bindx( listen_fd, &sa4P->sa, 1, SCTP_BINDX_ADD_ADDR) < 0 )
 		{
