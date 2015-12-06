@@ -1912,6 +1912,7 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
     httpd_sockaddr sa;
     socklen_t sz;
 #ifdef USE_SCTP
+    int sb_size;
     struct sctp_status status;
 #endif
 
@@ -2030,6 +2031,15 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 	    }
 	hc->no_i_streams = status.sstat_instrms;
 	hc->no_o_streams = status.sstat_outstrms;
+	sz = (socklen_t)sizeof(int);
+	if ( getsockopt(hc->conn_fd, SOL_SOCKET, SO_SNDBUF, &sb_size, &sz) < 0 )
+	    {
+	    syslog( LOG_CRIT, "getsockopt SO_SNDBUF - %m" );
+	    close( hc->conn_fd );
+	    hc->conn_fd = -1;
+	    return GC_FAIL;
+	    }
+	hc->send_at_once_limit = sb_size / 4;
 	}
     else
 	{

@@ -1747,6 +1747,13 @@ handle_send( connecttab* c, struct timeval* tvP )
 	max_bytes = 1000000000L;
     else
 	max_bytes = c->max_limit / 4;	/* send at most 1/4 seconds worth */
+#ifdef USE_SCTP
+    if ( hc->is_sctp )
+	{
+	if ( max_bytes > hc->send_at_once_limit )
+	    max_bytes = hc->send_at_once_limit;
+	}
+#endif
 
     iv[0].iov_base = hc->response;
     iv[0].iov_len = hc->responselen;

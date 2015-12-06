@@ -156,6 +156,7 @@ typedef struct {
     int is_sctp;
     unsigned int no_i_streams;
     unsigned int no_o_streams;
+    size_t send_at_once_limit;
 #endif
     char* file_address;
     } httpd_conn;
