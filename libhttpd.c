@@ -355,7 +355,7 @@ httpd_initialize(
     else
 	hs->listen4_fd = initialize_listen_socket( sa4P );
 #ifdef USE_SCTP
-	hs->listensctp_fd = initialize_listen_sctp_socket( sa4P, sa6P );
+    hs->listensctp_fd = initialize_listen_sctp_socket( sa4P, sa6P );
 #endif
     /* If we didn't get any valid sockets, fail. */
 #ifdef USE_SCTP
@@ -414,6 +414,11 @@ initialize_listen_socket( httpd_sockaddr* saP )
 	     listen_fd, SOL_SOCKET, SO_REUSEADDR, (char*) &on,
 	     sizeof(on) ) < 0 )
 	syslog( LOG_CRIT, "setsockopt SO_REUSEADDR - %m" );
+
+    /* Make v6 sockets v6 only */
+    if ( saP->sa.sa_family == AF_INET6 )
+	if ( setsockopt( listen_fd, IPPROTO_IPV6, IPV6_V6ONLY, (char*) &on, sizeof(on) ) < 0 )
+	    syslog( LOG_CRIT, "setsockopt IPV6_V6ONLY - %m" );
 
     /* Bind to it. */
     if ( bind( listen_fd, &saP->sa, sockaddr_len( saP ) ) < 0 )
