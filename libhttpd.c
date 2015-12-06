@@ -415,6 +415,11 @@ initialize_listen_socket( httpd_sockaddr* saP )
 	     sizeof(on) ) < 0 )
 	syslog( LOG_CRIT, "setsockopt SO_REUSEADDR - %m" );
 
+    /* Make v6 sockets v6 only */
+    if ( saP->sa.sa_family == AF_INET6 )
+	if ( setsockopt( listen_fd, IPPROTO_IPV6, IPV6_V6ONLY, (char*) &on, sizeof(on) ) < 0 )
+	    syslog( LOG_CRIT, "setsockopt IPV6_V6ONLY - %m" );
+
     /* Bind to it. */
     if ( bind( listen_fd, &saP->sa, sockaddr_len( saP ) ) < 0 )
 	{
