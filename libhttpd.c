@@ -355,7 +355,7 @@ httpd_initialize(
     else
 	hs->listen4_fd = initialize_listen_socket( sa4P );
 #ifdef USE_SCTP
-	hs->listensctp_fd = initialize_listen_sctp_socket( sa4P, sa6P );
+    hs->listensctp_fd = initialize_listen_sctp_socket( sa4P, sa6P );
 #endif
     /* If we didn't get any valid sockets, fail. */
 #ifdef USE_SCTP
