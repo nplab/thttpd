@@ -22,9 +22,9 @@ rcvar='thttpd_enable'
 load_rc_config "$name"
 
 # Defaults.
-thttpd_enable="${thttpd_enable:-'NO'}"
-thttpd_program="${thttpd_program:-'/usr/local/sbin/thttpd'}"
-thttpd_pidfile="${thttpd_pidfile:-'/var/run/thttpd.pid'}"
+thttpd_enable=${thttpd_enable:-'NO'}
+thttpd_program=${thttpd_program:-'/usr/local/sbin/thttpd'}
+thttpd_pidfile=${thttpd_pidfile:-'/var/run/thttpd.pid'}
 
 thttpd_precmd ()
     {
@@ -33,6 +33,7 @@ thttpd_precmd ()
 	devfs -m "$thttpd_devfs" rule -s 1 applyset
 	devfs -m "$thttpd_devfs" rule -s 2 applyset
     fi
+    rc_flags="-i ${pidfile} ${rc_flags}"
     }
 
 thttpd_stop ()
