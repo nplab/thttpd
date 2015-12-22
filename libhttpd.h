@@ -157,6 +157,7 @@ typedef struct {
     unsigned int no_i_streams;
     unsigned int no_o_streams;
     size_t send_at_once_limit;
+    int use_eeor;
 #endif
     char* file_address;
     } httpd_conn;

@@ -1914,6 +1914,9 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 #ifdef USE_SCTP
     int sb_size;
     struct sctp_status status;
+#ifdef SCTP_EXPLICIT_EOR
+    const int on = 1;
+#endif
 #endif
 
     if ( ! hc->initialized )
@@ -2040,11 +2043,26 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 	    return GC_FAIL;
 	    }
 	hc->send_at_once_limit = sb_size / 4;
+#ifdef SCTP_EXPLICIT_EOR
+	sz = (socklen_t)sizeof(int);
+	if ( setsockopt(hc->conn_fd, IPPROTO_SCTP, SCTP_EXPLICIT_EOR, &on, sz) < 0 )
+	    {
+	    syslog( LOG_CRIT, "getsockopt SCTP_EXPLICIT_EOR - %m" );
+	    close( hc->conn_fd );
+	    hc->conn_fd = -1;
+	    return GC_FAIL;
+	    }
+	hc->use_eeor = 1;
+#else
+	hc->use_eeor = 0;
+#endif
 	}
     else
 	{
 	hc->no_i_streams = 0;
 	hc->no_o_streams = 0;
+	hc->send_at_once_limit = 0;
+	hc->use_eeor = 0;
 	}
 #endif
     return GC_OK;
