@@ -1776,7 +1776,7 @@ handle_send( connecttab* c, struct timeval* tvP )
     msg.msg_iovlen = 2;
 #ifdef USE_SCTP
     if ( hc->is_sctp )
-        {
+	{
 	cmsg = (struct cmsghdr *)cmsgbuf;
 	cmsg->cmsg_level = IPPROTO_SCTP;
 #ifdef SCTP_SNDINFO
