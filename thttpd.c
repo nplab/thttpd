@@ -1820,7 +1820,7 @@ handle_send( connecttab* c, struct timeval* tvP )
     msg.msg_controllen = 0;
 #endif
     msg.msg_flags = 0;
-    sz = sendmsg( hc->conn_fd, &msg, 0);
+    sz = sendmsg( hc->conn_fd, &msg, 0 );
 
     if ( sz < 0 && errno == EINTR )
 	return;
