@@ -297,6 +297,10 @@ ssize_t httpd_read_fully( int fd, void* buf, size_t nbytes );
 
 /* Write the requested buffer completely, accounting for interruptions. */
 ssize_t httpd_write_fully( int fd, const char* buf, size_t nbytes );
+#ifdef USE_SCTP
+ssize_t httpd_write_fully_sctp( int fd, const char* buf, size_t nbytes,
+    int use_eeor, size_t send_at_once_limit );
+#endif
 
 /* Generate debugging statistics syslog message. */
 void httpd_logstats( long secs );

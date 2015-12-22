@@ -800,7 +800,15 @@ httpd_write_response( httpd_conn* hc )
     /* Send the response, if necessary. */
     if ( hc->responselen > 0 )
 	{
+#ifdef USE_SCTP
+	if ( hc->is_sctp )
+	    (void) httpd_write_fully_sctp( hc->conn_fd, hc->response, hc->responselen,
+					   hc->use_eeor, hc->send_at_once_limit );
+	else
+	    (void) httpd_write_fully( hc->conn_fd, hc->response, hc->responselen );
+#else
 	(void) httpd_write_fully( hc->conn_fd, hc->response, hc->responselen );
+#endif
 	hc->responselen = 0;
 	}
     }
@@ -4549,6 +4557,99 @@ httpd_read_fully( int fd, void* buf, size_t nbytes )
 
 
 /* Write the requested buffer completely, accounting for interruptions. */
+#ifdef USE_SCTP
+ssize_t
+httpd_write_fully_sctp( int fd, const char * buf, size_t nbytes,
+                        int use_eeor, size_t send_at_once_limit )
+    {
+    size_t nwritten;
+    size_t nwrite;
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    struct iovec iov;
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
+    struct sctp_sndinfo *sndinfo;
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+#endif
+    uint16_t flags;
+
+    nwritten = 0;
+    while ( nwritten < nbytes )
+	{
+	ssize_t r;
+
+	if ( nbytes - nwritten > send_at_once_limit )
+	    {
+	    nwrite = send_at_once_limit;
+	    flags = 0;
+	    }
+	else
+	    {
+	    nwrite = nbytes - nwritten;
+	    flags = SCTP_EOR;
+	}
+	iov.iov_base = (void *)buf + nwritten;
+	iov.iov_len = nwrite;
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	if ( use_eeor )
+	    {
+	    cmsg = (struct cmsghdr *)cmsgbuf;
+	    cmsg->cmsg_level = IPPROTO_SCTP;
+#ifdef SCTP_SNDINFO
+	    cmsg->cmsg_type = SCTP_SNDINFO;
+	    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
+	    sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
+	    sndinfo->snd_sid = 0;
+	    sndinfo->snd_flags = flags;
+	    sndinfo->snd_ppid = htonl(0);
+	    sndinfo->snd_context = 0;
+	    sndinfo->snd_assoc_id = 0;
+	    msg.msg_control = cmsg;
+	    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
+#else
+	    cmsg->cmsg_type = SCTP_SNDRCV;
+	    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
+	    sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
+	    sndrcvinfo->sinfo_stream = 0;
+	    sndrcvinfo->sinfo_flags = flags;
+	    sndrcvinfo->sinfo_ppid = htonl(0);
+	    sndrcvinfo->sinfo_context = 0;
+	    sndrcvinfo->sinfo_timetolive = 0;
+	    sndrcvinfo->sinfo_assoc_id = 0;
+	    msg.msg_control = cmsg;
+	    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
+#endif
+	    }
+	else
+	    {
+	    msg.msg_control = NULL;
+	    msg.msg_controllen = 0;
+	    }
+	msg.msg_flags = 0;
+	r = sendmsg( fd, &msg, 0 );
+
+	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
+	    {
+	    sleep( 1 );
+	    continue;
+	    }
+	if ( r < 0 )
+	    return r;
+	if ( r == 0 )
+	    break;
+	nwritten += r;
+	}
+
+    return nwritten;
+    }
+#endif
+
 ssize_t
 httpd_write_fully( int fd, const char* buf, size_t nbytes )
     {
@@ -4574,7 +4675,6 @@ httpd_write_fully( int fd, const char* buf, size_t nbytes )
 
     return nwritten;
     }
-
 
 /* Generate debugging statistics syslog message. */
 void
