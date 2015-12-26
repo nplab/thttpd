@@ -3007,7 +3007,6 @@ ls( httpd_conn* hc )
     static size_t maxrname = 0;
     static char* encrname;
     static size_t maxencrname = 0;
-    FILE* fp;
     int i, r;
     struct stat sb;
     struct stat lsb;
@@ -3070,23 +3069,7 @@ ls( httpd_conn* hc )
 	    (void) nice( CGI_NICE );
 #endif /* CGI_NICE */
 
-	    /* Open a stdio stream so that we can use fprintf, which is more
-	    ** efficient than a bunch of separate write()s.  We don't have
-	    ** to worry about double closes or file descriptor leaks cause
-	    ** we're in a subprocess.
-	    */
-	    fp = fdopen( hc->conn_fd, "w" );
-	    if ( fp == (FILE*) 0 )
-		{
-		syslog( LOG_ERR, "fdopen - %m" );
-		httpd_send_err(
-		    hc, 500, err500title, "", err500form, hc->encodedurl );
-		httpd_write_response( hc );
-		closedir( dirp );
-		exit( 1 );
-		}
-
-	    (void) fprintf( fp, "\
+	    (void) dprintf( hc->conn_fd, "\
 <!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n\
 \n\
 <html>\n\
@@ -3249,15 +3232,14 @@ mode  links    bytes  last-changed  name\n\
 		    }
 
 		/* And print. */
-		(void)  fprintf( fp,
+		(void)  dprintf( hc->conn_fd,
 		   "%s %3ld  %10lld  %s  <a href=\"/%.500s%s\">%.80s</a>%s%s%s\n",
 		    modestr, (long) lsb.st_nlink, (long long) lsb.st_size,
 		    timestr, encrname, S_ISDIR(sb.st_mode) ? "/" : "",
 		    nameptrs[i], linkprefix, lnk, fileclass );
 		}
 
-	    (void) fprintf( fp, "    </pre>\n  </body>\n</html>\n" );
-	    (void) fclose( fp );
+	    (void) dprintf( hc->conn_fd, "    </pre>\n  </body>\n</html>\n" );
 	    exit( 0 );
 	    }
 
