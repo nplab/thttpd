@@ -35,6 +35,9 @@
 #define EXPOSED_SERVER_SOFTWARE "thttpd"
 #endif /* SHOW_SERVER_VERSION */
 
+#ifdef FreeBSD
+#define _WITH_DPRINTF
+#endif
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/stat.h>
