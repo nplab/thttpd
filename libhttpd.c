@@ -3243,7 +3243,17 @@ mode  links    bytes  last-changed  name\n\
 		    nameptrs[i], linkprefix, lnk, fileclass );
 		}
 
+#ifdef USE_SCTP
+	    if ( hc->is_sctp )
+		{
+		const char *trailer = "    </pre>\n  </body>\n</html>\n";
+		(void) httpd_write_sctp( hc->conn_fd, trailer, strlen(trailer), hc->use_eeor, 1, 0, 0 );
+		}
+	    else
+		(void) dprintf( hc->conn_fd, "    </pre>\n  </body>\n</html>\n" );
+#else
 	    (void) dprintf( hc->conn_fd, "    </pre>\n  </body>\n</html>\n" );
+#endif
 	    exit( 0 );
 	    }
 
@@ -4542,8 +4552,61 @@ httpd_read_fully( int fd, void* buf, size_t nbytes )
     }
 
 
-/* Write the requested buffer completely, accounting for interruptions. */
 #ifdef USE_SCTP
+ssize_t
+httpd_write_sctp( int fd, const char * buf, size_t nbytes,
+                  int use_eeor, int eor, uint32_t ppid, uint16_t sid )
+{
+    ssize_t r;
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    struct iovec iov;
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
+    struct sctp_sndinfo *sndinfo;
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+#endif
+
+    iov.iov_base = (void *)buf;
+    iov.iov_len = nbytes;
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    cmsg = (struct cmsghdr *)cmsgbuf;
+    cmsg->cmsg_level = IPPROTO_SCTP;
+#ifdef SCTP_SNDINFO
+    cmsg->cmsg_type = SCTP_SNDINFO;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
+    sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
+    sndinfo->snd_sid = sid;
+    sndinfo->snd_flags = (use_eeor && eor) ? SCTP_EOR : 0;
+    sndinfo->snd_ppid = htonl(ppid);
+    sndinfo->snd_context = 0;
+    sndinfo->snd_assoc_id = 0;
+    msg.msg_control = cmsg;
+    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
+#else
+    cmsg->cmsg_type = SCTP_SNDRCV;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
+    sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
+    sndrcvinfo->sinfo_stream = sid;
+    sndrcvinfo->sinfo_flags = (use_eeor && eor) ? SCTP_EOR : 0;;
+    sndrcvinfo->sinfo_ppid = htonl(ppid);
+    sndrcvinfo->sinfo_context = 0;
+    sndrcvinfo->sinfo_timetolive = 0;
+    sndrcvinfo->sinfo_assoc_id = 0;
+    msg.msg_control = cmsg;
+    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
+#endif
+    msg.msg_flags = 0;
+    r = sendmsg( fd, &msg, 0 );
+    return r;
+}
+
+/* Write the requested buffer completely, accounting for interruptions. */
 ssize_t
 httpd_write_fully_sctp( int fd, const char * buf, size_t nbytes,
                         int use_eeor, size_t send_at_once_limit )
@@ -4560,8 +4623,9 @@ httpd_write_fully_sctp( int fd, const char * buf, size_t nbytes,
     char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
     struct sctp_sndrcvinfo *sndrcvinfo;
 #endif
-    uint16_t flags;
+    int eor;
 
+syslog( LOG_CRIT, "httpd_write_fully_sctp(): nbytes=%zu, use_eeor=%d, send_at_once_limit=%zu", nbytes, use_eeor, send_at_once_limit );
     nwritten = 0;
     while ( nwritten < nbytes )
 	{
@@ -4570,55 +4634,15 @@ httpd_write_fully_sctp( int fd, const char * buf, size_t nbytes,
 	if ( nbytes - nwritten > send_at_once_limit )
 	    {
 	    nwrite = send_at_once_limit;
-	    flags = 0;
+	    eor = 0;
 	    }
 	else
 	    {
 	    nwrite = nbytes - nwritten;
-	    flags = SCTP_EOR;
+	    eor = 1;
 	}
-	iov.iov_base = (void *)buf + nwritten;
-	iov.iov_len = nwrite;
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	msg.msg_iov = &iov;
-	msg.msg_iovlen = 1;
-	if ( use_eeor )
-	    {
-	    cmsg = (struct cmsghdr *)cmsgbuf;
-	    cmsg->cmsg_level = IPPROTO_SCTP;
-#ifdef SCTP_SNDINFO
-	    cmsg->cmsg_type = SCTP_SNDINFO;
-	    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
-	    sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
-	    sndinfo->snd_sid = 0;
-	    sndinfo->snd_flags = flags;
-	    sndinfo->snd_ppid = htonl(0);
-	    sndinfo->snd_context = 0;
-	    sndinfo->snd_assoc_id = 0;
-	    msg.msg_control = cmsg;
-	    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
-#else
-	    cmsg->cmsg_type = SCTP_SNDRCV;
-	    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
-	    sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
-	    sndrcvinfo->sinfo_stream = 0;
-	    sndrcvinfo->sinfo_flags = flags;
-	    sndrcvinfo->sinfo_ppid = htonl(0);
-	    sndrcvinfo->sinfo_context = 0;
-	    sndrcvinfo->sinfo_timetolive = 0;
-	    sndrcvinfo->sinfo_assoc_id = 0;
-	    msg.msg_control = cmsg;
-	    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
-#endif
-	    }
-	else
-	    {
-	    msg.msg_control = NULL;
-	    msg.msg_controllen = 0;
-	    }
-	msg.msg_flags = 0;
-	r = sendmsg( fd, &msg, 0 );
+
+	r = httpd_write_sctp( fd, (void *)(buf + nwritten), nwrite, use_eeor, eor, 0, 0 );
 
 	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
 	    {
@@ -4636,6 +4660,7 @@ httpd_write_fully_sctp( int fd, const char * buf, size_t nbytes,
     }
 #endif
 
+/* Write the requested buffer completely, accounting for interruptions. */
 ssize_t
 httpd_write_fully( int fd, const char* buf, size_t nbytes )
     {
