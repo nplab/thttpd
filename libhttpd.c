@@ -58,6 +58,9 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <stdarg.h>
+#ifdef __FreeBSD__
+#include <sys/sysctl.h>
+#endif
 
 #ifdef HAVE_CRYPT_H
 #include <crypt.h>
@@ -3388,7 +3391,7 @@ make_envp( httpd_conn* hc )
 #ifdef USE_SCTP
     if ( hc->is_sctp )
 	{
-	uint16_t port;
+	uint16_t remote_encaps_port;
 #ifdef SCTP_REMOTE_UDP_ENCAPS_PORT
 	socklen_t optlen;
 	struct sctp_udpencaps udpencaps;
@@ -3397,14 +3400,28 @@ make_envp( httpd_conn* hc )
 	memcpy( &udpencaps.sue_address, &hc->client_addr, sizeof( hc->client_addr ) );
 	optlen = (socklen_t)sizeof( struct sctp_udpencaps );
 	if ( getsockopt( hc->conn_fd, IPPROTO_SCTP, SCTP_REMOTE_UDP_ENCAPS_PORT, &udpencaps, &optlen ) < 0 )
-	    port = 0;
+	    remote_encaps_port = 0;
 	else
-	    port = ntohs( udpencaps.sue_port );
+	    remote_encaps_port = ntohs( udpencaps.sue_port );
 #else
-	port = 0;
+	remote_encaps_port = 0;
 #endif
-	if ( port > 0 )
+	if ( remote_encaps_port > 0 )
+	    {
+#ifdef __FreeBSD__
+	    uint32_t local_encaps_port;
+	    size_t len;
+
+	    len = sizeof( uint32_t );
+	    if ( sysctlbyname( "net.inet.sctp.udp_tunneling_port", &local_encaps_port, &len, NULL, 0 ) < 0 )
+		local_encaps_port = 0;
+	    (void) my_snprintf( buf, sizeof(buf), "%d", (int) local_encaps_port );
+	    envp[envn++] = build_env( "SERVER_UDP_ENCAPS_PORT=%s", buf );
+#endif
+	    (void) my_snprintf( buf, sizeof(buf), "%d", (int) remote_encaps_port );
+	    envp[envn++] = build_env( "REMOTE_UDP_ENCAPS_PORT=%s", buf );
 	    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "SCTP/UDP" );
+	    }
 	else
 	    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "SCTP" );
 	}
