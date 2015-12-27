@@ -301,7 +301,7 @@ ssize_t httpd_write_fully( int fd, const char* buf, size_t nbytes );
 ssize_t httpd_write_sctp( int fd, const char * buf, size_t nbytes,
     int use_eeor, int eor, uint32_t ppid, uint16_t sid );
 ssize_t httpd_write_fully_sctp( int fd, const char* buf, size_t nbytes,
-    int use_eeor, size_t send_at_once_limit );
+    int use_eeor, int eor, size_t send_at_once_limit );
 #endif
 
 /* Generate debugging statistics syslog message. */
