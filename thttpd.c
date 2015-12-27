@@ -1784,10 +1784,11 @@ handle_send( connecttab* c, struct timeval* tvP )
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
 	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
 	sndinfo->snd_sid = 0;
-	if (c->end_byte_index - c->next_byte_index > max_bytes)
-	    sndinfo->snd_flags = 0;
-	else
-	    sndinfo->snd_flags = SCTP_EOR;
+	sndinfo->snd_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+	if (c->end_byte_index - c->next_byte_index <= max_bytes)
+	    sndinfo->snd_flags |= SCTP_EOR;
+#endif
 	sndinfo->snd_ppid = htonl(0);
 	sndinfo->snd_context = 0;
 	sndinfo->snd_assoc_id = 0;
@@ -1798,10 +1799,11 @@ handle_send( connecttab* c, struct timeval* tvP )
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
 	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
 	sndrcvinfo->sinfo_stream = 0;
-	if (c->end_byte_index - c->next_byte_index > max_bytes)
-	    sndrcvinfo->sinfo_flags = 0;
-	else
-	    sndrcvinfo->sinfo_flags = SCTP_EOR;
+	sndrcvinfo->sinfo_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+	if (c->end_byte_index - c->next_byte_index <= max_bytes)
+	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
+#endif
 	sndrcvinfo->sinfo_ppid = htonl(0);
 	sndrcvinfo->sinfo_context = 0;
 	sndrcvinfo->sinfo_timetolive = 0;
