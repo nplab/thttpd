@@ -3385,6 +3385,14 @@ make_envp( httpd_conn* hc )
     else
 	(void) my_snprintf( buf, sizeof(buf), "%d", (int) ntohs( hc->client_addr.sa_in6.sin6_port ) );
     envp[envn++] = build_env( "REMOTE_PORT=%s", buf );
+#ifdef USE_SCTP
+    if ( hc->is_sctp )
+	envp[envn++] = build_env( "HTTP_TRANSPORT_PROTOCOL=%s", "SCTP" );
+    else
+	envp[envn++] = build_env( "HTTP_TRANSPORT_PROTOCOL=%s", "TCP" );
+#else
+    envp[envn++] = build_env( "HTTP_TRANSPORT_PROTOCOL=%s", "TCP" );
+#endif
     if ( hc->referrer[0] != '\0' )
 	{
 	envp[envn++] = build_env( "HTTP_REFERER=%s", hc->referrer );
