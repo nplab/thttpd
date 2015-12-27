@@ -3380,6 +3380,11 @@ make_envp( httpd_conn* hc )
 	envp[envn++] = build_env( "QUERY_STRING=%s", hc->query );
     envp[envn++] = build_env(
 	"REMOTE_ADDR=%s", httpd_ntoa( &hc->client_addr ) );
+    if ( hc->client_addr.sa.sa_family == AF_INET )
+	(void) my_snprintf( buf, sizeof(buf), "%d", (int) ntohs( hc->client_addr.sa_in.sin_port ) );
+    else
+	(void) my_snprintf( buf, sizeof(buf), "%d", (int) ntohs( hc->client_addr.sa_in6.sin6_port ) );
+    envp[envn++] = build_env( "REMOTE_PORT=%s", buf );
     if ( hc->referrer[0] != '\0' )
 	{
 	envp[envn++] = build_env( "HTTP_REFERER=%s", hc->referrer );
@@ -4396,8 +4401,8 @@ make_log_entry( httpd_conn* hc, struct timeval* nowP )
 	    "%.80s:%d %.4s - %.80s [%s] \"%.80s %.300s %.80s\" %d %s \"%.200s\" \"%.200s\"\n",
 	    httpd_ntoa( &hc->client_addr ),
 	    hc->client_addr.sa.sa_family == AF_INET ?
-	      ntohs(hc->client_addr.sa_in.sin_port) :
-	      ntohs(hc->client_addr.sa_in6.sin6_port),
+	      ntohs( hc->client_addr.sa_in.sin_port ) :
+	      ntohs( hc->client_addr.sa_in6.sin6_port ),
 	    hc->is_sctp ? "SCTP" : " TCP",
 #else
 	    "%.80s - %.80s [%s] \"%.80s %.300s %.80s\" %d %s \"%.200s\" \"%.200s\"\n",
