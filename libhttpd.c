@@ -3387,11 +3387,31 @@ make_envp( httpd_conn* hc )
     envp[envn++] = build_env( "REMOTE_PORT=%s", buf );
 #ifdef USE_SCTP
     if ( hc->is_sctp )
-	envp[envn++] = build_env( "HTTP_TRANSPORT_PROTOCOL=%s", "SCTP" );
-    else
-	envp[envn++] = build_env( "HTTP_TRANSPORT_PROTOCOL=%s", "TCP" );
+	{
+	uint16_t port;
+#ifdef SCTP_REMOTE_UDP_ENCAPS_PORT
+	socklen_t optlen;
+	struct sctp_udpencaps udpencaps;
+
+	memset( &udpencaps, 0, sizeof(struct sctp_udpencaps) );
+	memcpy( &udpencaps.sue_address, &hc->client_addr, sizeof( hc->client_addr ) );
+	optlen = (socklen_t)sizeof( struct sctp_udpencaps );
+	if ( getsockopt( hc->conn_fd, IPPROTO_SCTP, SCTP_REMOTE_UDP_ENCAPS_PORT, &udpencaps, &optlen ) < 0 )
+	    port = 0;
+	else
+	    port = ntohs( udpencaps.sue_port );
 #else
-    envp[envn++] = build_env( "HTTP_TRANSPORT_PROTOCOL=%s", "TCP" );
+	port = 0;
+#endif
+	if ( port > 0 )
+	    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "SCTP/UDP" );
+	else
+	    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "SCTP" );
+	}
+    else
+	envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP" );
+#else
+    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP" );
 #endif
     if ( hc->referrer[0] != '\0' )
 	{
