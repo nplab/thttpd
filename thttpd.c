@@ -1741,7 +1741,18 @@ handle_send( connecttab* c, struct timeval* tvP )
     time_t elapsed;
     httpd_conn* hc = c->hc;
     int tind;
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
     struct iovec iv[2];
+#ifdef USE_SCTP
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
+    struct sctp_sndinfo *sndinfo;
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+#endif
+#endif
 
     if ( c->max_limit == THROTTLE_NOLIMIT )
 	max_bytes = 1000000000L;
@@ -1759,7 +1770,59 @@ handle_send( connecttab* c, struct timeval* tvP )
     iv[0].iov_len = hc->responselen;
     iv[1].iov_base = &(hc->file_address[c->next_byte_index]);
     iv[1].iov_len = MIN( c->end_byte_index - c->next_byte_index, max_bytes );
-    sz = writev( hc->conn_fd, iv, 2 );
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = iv;
+    msg.msg_iovlen = 2;
+#ifdef USE_SCTP
+    if ( hc->is_sctp && hc->use_eeor )
+	{
+	cmsg = (struct cmsghdr *)cmsgbuf;
+	cmsg->cmsg_level = IPPROTO_SCTP;
+#ifdef SCTP_SNDINFO
+	cmsg->cmsg_type = SCTP_SNDINFO;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
+	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
+	sndinfo->snd_sid = 0;
+	sndinfo->snd_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
+	    sndinfo->snd_flags |= SCTP_EOR;
+#endif
+	sndinfo->snd_ppid = htonl(0);
+	sndinfo->snd_context = 0;
+	sndinfo->snd_assoc_id = 0;
+	msg.msg_control = cmsg;
+	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
+#else
+	cmsg->cmsg_type = SCTP_SNDRCV;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
+	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
+	sndrcvinfo->sinfo_stream = 0;
+	sndrcvinfo->sinfo_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
+	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
+#endif
+	sndrcvinfo->sinfo_ppid = htonl(0);
+	sndrcvinfo->sinfo_context = 0;
+	sndrcvinfo->sinfo_timetolive = 0;
+	sndrcvinfo->sinfo_assoc_id = 0;
+	msg.msg_control = cmsg;
+	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
+#endif
+	}
+    else
+	{
+	msg.msg_control = NULL;
+	msg.msg_controllen = 0;
+	}
+#else
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+#endif
+    msg.msg_flags = 0;
+    sz = sendmsg( hc->conn_fd, &msg, 0 );
 
     if ( sz < 0 && errno == EINTR )
 	return;

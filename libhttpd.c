@@ -804,7 +804,15 @@ httpd_write_response( httpd_conn* hc )
     /* Send the response, if necessary. */
     if ( hc->responselen > 0 )
 	{
+#ifdef USE_SCTP
+	if ( hc->is_sctp )
+	    (void) httpd_write_fully_sctp( hc->conn_fd, hc->response, hc->responselen,
+					   hc->use_eeor, 1, hc->send_at_once_limit );
+	else
+	    (void) httpd_write_fully( hc->conn_fd, hc->response, hc->responselen );
+#else
 	(void) httpd_write_fully( hc->conn_fd, hc->response, hc->responselen );
+#endif
 	hc->responselen = 0;
 	}
     }
@@ -1918,6 +1926,9 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 #ifdef USE_SCTP
     int sb_size;
     struct sctp_status status;
+#ifdef SCTP_EXPLICIT_EOR
+    const int on = 1;
+#endif
 #endif
 
     if ( ! hc->initialized )
@@ -2044,11 +2055,26 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 	    return GC_FAIL;
 	    }
 	hc->send_at_once_limit = sb_size / 4;
+#ifdef SCTP_EXPLICIT_EOR
+	sz = (socklen_t)sizeof(int);
+	if ( setsockopt(hc->conn_fd, IPPROTO_SCTP, SCTP_EXPLICIT_EOR, &on, sz) < 0 )
+	    {
+	    syslog( LOG_CRIT, "getsockopt SCTP_EXPLICIT_EOR - %m" );
+	    close( hc->conn_fd );
+	    hc->conn_fd = -1;
+	    return GC_FAIL;
+	    }
+	hc->use_eeor = 1;
+#else
+	hc->use_eeor = 0;
+#endif
 	}
     else
 	{
 	hc->no_i_streams = 0;
 	hc->no_o_streams = 0;
+	hc->send_at_once_limit = 0;
+	hc->use_eeor = 0;
 	}
 #endif
     return GC_OK;
@@ -3217,7 +3243,17 @@ mode  links    bytes  last-changed  name\n\
 		    nameptrs[i], linkprefix, lnk, fileclass );
 		}
 
+#ifdef USE_SCTP
+	    if ( hc->is_sctp )
+		{
+		const char *trailer = "    </pre>\n  </body>\n</html>\n";
+		(void) httpd_write_sctp( hc->conn_fd, trailer, strlen(trailer), hc->use_eeor, 1, 0, 0 );
+		}
+	    else
+		(void) dprintf( hc->conn_fd, "    </pre>\n  </body>\n</html>\n" );
+#else
 	    (void) dprintf( hc->conn_fd, "    </pre>\n  </body>\n</html>\n" );
+#endif
 	    exit( 0 );
 	    }
 
@@ -3505,11 +3541,20 @@ post_post_garbage_hack( httpd_conn* hc )
 ** and check for the special ones before writing the status.  Then we write
 ** out the saved headers and proceed to echo the rest of the response.
 */
+
+#define BUFSIZE 1024
 static void
 cgi_interpose_output( httpd_conn* hc, int rfd )
     {
     ssize_t r;
-    char buf[1024];
+#ifdef USE_SCTP
+    ssize_t r1, r2;
+    char buf1[BUFSIZE];
+    char buf2[BUFSIZE];
+    char *buf;
+#else
+    char buf[BUFSIZE];
+#endif
     size_t headers_size, headers_len;
     char* headers;
     char* br;
@@ -3526,9 +3571,12 @@ cgi_interpose_output( httpd_conn* hc, int rfd )
     headers_size = 0;
     httpd_realloc_str( &headers, &headers_size, 500 );
     headers_len = 0;
+#ifdef USE_SCTP
+    buf = buf1;
+#endif
     for (;;)
 	{
-	r = read( rfd, buf, sizeof(buf) );
+	r = read( rfd, buf, BUFSIZE );
 	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
 	    {
 	    sleep( 1 );
@@ -3595,7 +3643,109 @@ cgi_interpose_output( httpd_conn* hc, int rfd )
 	case 503: title = httpd_err503title; break;
 	default: title = "Something"; break;
 	}
-    (void) my_snprintf( buf, sizeof(buf), "HTTP/1.0 %d %s\015\012", status, title );
+#ifdef USE_SCTP
+    if ( hc->is_sctp )
+	{
+	int headers_written, buffer_cached;
+
+	headers_written = 0;
+	buffer_cached = 0;
+	for (;;)
+	    {
+	    r = read( rfd, buf, BUFSIZE );
+	    if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
+		{
+		sleep( 1 );
+		continue;
+		}
+	    if (headers_written == 0)
+		{
+		int eor;
+
+		if ( (headers_len == 0) && (r == 0) )
+		    eor = 1;
+		else
+		    eor = 0;
+		(void) my_snprintf( buf2, BUFSIZE, "HTTP/1.0 %d %s\015\012", status, title );
+		(void) httpd_write_fully_sctp( hc->conn_fd, buf2, strlen( buf2 ),
+		                               hc->use_eeor, eor, hc->send_at_once_limit );
+		if ( r == 0 )
+		    eor = 1;
+		else
+		    eor = 0;
+		(void) httpd_write_fully_sctp( hc->conn_fd, headers, headers_len,
+		                               hc->use_eeor, eor, hc->send_at_once_limit );
+		headers_written = 1;
+		}
+	    if ( r <= 0 )
+		break;
+	    if ( buffer_cached == 1 )
+		{
+		if (buf == buf1)
+		    {
+		    if ( httpd_write_fully_sctp( hc->conn_fd, buf2, r2,
+		                                 hc->use_eeor, 0,
+		                                 hc->send_at_once_limit ) != r2 )
+			break;
+		    }
+		else
+		    {
+		    if ( httpd_write_fully_sctp( hc->conn_fd, buf1, r1,
+		                                 hc->use_eeor, 0,
+		                                 hc->send_at_once_limit ) != r1 )
+			break;
+		    }
+		buffer_cached = 0;
+		}
+	    if ( buf == buf1 )
+		{
+		r1 = r;
+		buf = buf2;
+		}
+	    else
+		{
+		r2 = r;
+		buf = buf1;
+		}
+	    buffer_cached = 1;
+	    }
+	if ( buffer_cached == 1 )
+	    {
+	    if ( buf == buf1 )
+		(void)httpd_write_fully_sctp( hc->conn_fd, buf2, r2,
+		                              hc->use_eeor, 1,
+		                              hc->send_at_once_limit );
+	    else
+		(void)httpd_write_fully_sctp( hc->conn_fd, buf1, r1,
+		                              hc->use_eeor, 1,
+		                              hc->send_at_once_limit );
+	    }
+	}
+    else
+	{
+	(void) my_snprintf( buf, BUFSIZE, "HTTP/1.0 %d %s\015\012", status, title );
+	(void) httpd_write_fully( hc->conn_fd, buf, strlen( buf ) );
+
+	/* Write the saved headers. */
+	(void) httpd_write_fully( hc->conn_fd, headers, headers_len );
+
+	/* Echo the rest of the output. */
+	for (;;)
+	    {
+	    r = read( rfd, buf, BUFSIZE );
+	    if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
+		{
+		sleep( 1 );
+		continue;
+		}
+	    if ( r <= 0 )
+		break;
+	    if ( httpd_write_fully( hc->conn_fd, buf, r ) != r )
+		break;
+	    }
+	}
+#else
+    (void) my_snprintf( buf, BUFSIZE, "HTTP/1.0 %d %s\015\012", status, title );
     (void) httpd_write_fully( hc->conn_fd, buf, strlen( buf ) );
 
     /* Write the saved headers. */
@@ -3604,7 +3754,7 @@ cgi_interpose_output( httpd_conn* hc, int rfd )
     /* Echo the rest of the output. */
     for (;;)
 	{
-	r = read( rfd, buf, sizeof(buf) );
+	r = read( rfd, buf, BUFSIZE );
 	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
 	    {
 	    sleep( 1 );
@@ -3615,6 +3765,7 @@ cgi_interpose_output( httpd_conn* hc, int rfd )
 	if ( httpd_write_fully( hc->conn_fd, buf, r ) != r )
 	    break;
 	}
+#endif
     shutdown( hc->conn_fd, SHUT_WR );
     }
 
@@ -4516,6 +4667,119 @@ httpd_read_fully( int fd, void* buf, size_t nbytes )
     }
 
 
+#ifdef USE_SCTP
+ssize_t
+httpd_write_sctp( int fd, const char * buf, size_t nbytes,
+                  int use_eeor, int eor, uint32_t ppid, uint16_t sid )
+{
+    ssize_t r;
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    struct iovec iov;
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
+    struct sctp_sndinfo *sndinfo;
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+#endif
+
+    iov.iov_base = (void *)buf;
+    iov.iov_len = nbytes;
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    cmsg = (struct cmsghdr *)cmsgbuf;
+    cmsg->cmsg_level = IPPROTO_SCTP;
+#ifdef SCTP_SNDINFO
+    cmsg->cmsg_type = SCTP_SNDINFO;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
+    sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
+    sndinfo->snd_sid = sid;
+    sndinfo->snd_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+    if ( use_eeor && eor )
+	sndinfo->snd_flags |= SCTP_EOR;
+#endif
+    sndinfo->snd_ppid = htonl(ppid);
+    sndinfo->snd_context = 0;
+    sndinfo->snd_assoc_id = 0;
+    msg.msg_control = cmsg;
+    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
+#else
+    cmsg->cmsg_type = SCTP_SNDRCV;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
+    sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
+    sndrcvinfo->sinfo_stream = sid;
+    sndrcvinfo->sinfo_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+    if ( use_eeor && eor )
+	sndrcvinfo->sinfo_flags |= SCTP_EOR;
+#endif
+    sndrcvinfo->sinfo_ppid = htonl(ppid);
+    sndrcvinfo->sinfo_context = 0;
+    sndrcvinfo->sinfo_timetolive = 0;
+    sndrcvinfo->sinfo_assoc_id = 0;
+    msg.msg_control = cmsg;
+    msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
+#endif
+    msg.msg_flags = 0;
+    r = sendmsg( fd, &msg, 0 );
+    return r;
+}
+
+/* Write the requested buffer completely, accounting for interruptions. */
+ssize_t
+httpd_write_fully_sctp( int fd, const char * buf, size_t nbytes,
+                        int use_eeor, int eor, size_t send_at_once_limit )
+    {
+    size_t nwritten;
+    size_t nwrite;
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    struct iovec iov;
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
+    struct sctp_sndinfo *sndinfo;
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+#endif
+
+    nwritten = 0;
+    while ( nwritten < nbytes )
+	{
+	ssize_t r;
+
+	if ( nbytes - nwritten > send_at_once_limit )
+	    {
+	    nwrite = send_at_once_limit;
+	    eor = 0;
+	    }
+	else
+	    {
+	    nwrite = nbytes - nwritten;
+	    }
+
+	r = httpd_write_sctp( fd, (void *)(buf + nwritten), nwrite, use_eeor, eor, 0, 0 );
+
+	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
+	    {
+	    sleep( 1 );
+	    continue;
+	    }
+	if ( r < 0 )
+	    return r;
+	if ( r == 0 )
+	    break;
+	nwritten += r;
+	}
+
+    return nwritten;
+    }
+#endif
+
 /* Write the requested buffer completely, accounting for interruptions. */
 ssize_t
 httpd_write_fully( int fd, const char* buf, size_t nbytes )
@@ -4542,7 +4806,6 @@ httpd_write_fully( int fd, const char* buf, size_t nbytes )
 
     return nwritten;
     }
-
 
 /* Generate debugging statistics syslog message. */
 void
