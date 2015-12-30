@@ -27,7 +27,7 @@ dnl
 AC_MSG_CHECKING(how to link static binaries)
 AC_CACHE_VAL(ac_cv_lbl_static_flag,
     ac_cv_lbl_static_flag=unknown
-    echo 'main() {}' > conftest.c
+    echo 'int main(void) {return 0;}' > conftest.c
     if test "$GCC" != yes ; then
 	    trial_flag="-Bstatic"
 	    test=`$CC $trial_flag -o conftest conftest.c 2>&1`

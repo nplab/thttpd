@@ -891,7 +891,7 @@ if eval "test \"`echo '$''{'ac_cv_lbl_static_flag'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   ac_cv_lbl_static_flag=unknown
-    echo 'main() {}' > conftest.c
+    echo 'int main(void) {return 0;}' > conftest.c
     if test "$GCC" != yes ; then
 	    trial_flag="-Bstatic"
 	    test=`$CC $trial_flag -o conftest conftest.c 2>&1`
