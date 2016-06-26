@@ -4750,7 +4750,12 @@ httpd_write_sctp( int fd, const char * buf, size_t nbytes,
     sndinfo->snd_flags = 0;
 #ifdef SCTP_EXPLICIT_EOR
     if ( use_eeor && eor )
+	{
 	sndinfo->snd_flags |= SCTP_EOR;
+#ifdef SCTP_SACK_IMMEDIATELY
+	sndinfo->snd_flags |= SCTP_SACK_IMMEDIATELY;
+#endif
+	}
 #endif
     sndinfo->snd_ppid = htonl(ppid);
     sndinfo->snd_context = 0;
@@ -4765,7 +4770,12 @@ httpd_write_sctp( int fd, const char * buf, size_t nbytes,
     sndrcvinfo->sinfo_flags = 0;
 #ifdef SCTP_EXPLICIT_EOR
     if ( use_eeor && eor )
+	{
 	sndrcvinfo->sinfo_flags |= SCTP_EOR;
+#ifdef SCTP_SACK_IMMEDIATELY
+	sndrcvinfo->sinfo_flags |= SCTP_SACK_IMMEDIATELY;
+#endif
+	}
 #endif
     sndrcvinfo->sinfo_ppid = htonl(ppid);
     sndrcvinfo->sinfo_context = 0;

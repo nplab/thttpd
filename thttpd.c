@@ -1787,7 +1787,13 @@ handle_send( connecttab* c, struct timeval* tvP )
 	sndinfo->snd_flags = 0;
 #ifdef SCTP_EXPLICIT_EOR
 	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
+	    {
 	    sndinfo->snd_flags |= SCTP_EOR;
+#ifdef SCTP_SACK_IMMEDIATELY
+	    sndinfo->snd_flags |= SCTP_SACK_IMMEDIATELY;
+#endif
+
+	    }
 #endif
 	sndinfo->snd_ppid = htonl(0);
 	sndinfo->snd_context = 0;
@@ -1802,7 +1808,12 @@ handle_send( connecttab* c, struct timeval* tvP )
 	sndrcvinfo->sinfo_flags = 0;
 #ifdef SCTP_EXPLICIT_EOR
 	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
+	    {
 	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
+#ifdef SCTP_SACK_IMMEDIATELY
+	    sndrcvinfo->sinfo_flags |= SCTP_SACK_IMMEDIATELY;
+#endif
+	    }
 #endif
 	sndrcvinfo->sinfo_ppid = htonl(0);
 	sndrcvinfo->sinfo_context = 0;
