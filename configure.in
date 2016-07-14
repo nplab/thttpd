@@ -27,7 +27,7 @@ dnl
 AC_MSG_CHECKING(how to link static binaries)
 AC_CACHE_VAL(ac_cv_lbl_static_flag,
     ac_cv_lbl_static_flag=unknown
-    echo 'int main(void) {return 0;}' > conftest.c
+    echo 'main() {}' > conftest.c
     if test "$GCC" != yes ; then
 	    trial_flag="-Bstatic"
 	    test=`$CC $trial_flag -o conftest conftest.c 2>&1`
@@ -64,7 +64,7 @@ else
 	AC_MSG_RESULT(no)   
 fi
 
-AC_CHECK_HEADERS(fcntl.h grp.h memory.h paths.h poll.h sys/poll.h sys/devpoll.h sys/event.h osreldate.h netinet/sctp.h crypt.h)
+AC_CHECK_HEADERS(fcntl.h grp.h memory.h paths.h poll.h sys/poll.h sys/devpoll.h sys/event.h osreldate.h)
 AC_HEADER_TIME
 AC_HEADER_DIRENT
 
@@ -112,8 +112,6 @@ AC_CHECK_FUNC(hstrerror, ,
 AC_REPLACE_FUNCS(strerror)
 AC_CHECK_FUNCS(waitpid vsnprintf daemon setsid setlogin getaddrinfo getnameinfo gai_strerror kqueue sigset atoll)
 AC_FUNC_MMAP
-
-AC_CHECK_FUNC(sctp_bindx, , AC_CHECK_LIB(sctp, sctp_bindx))
 
 case "$target_os" in
 solaris*)

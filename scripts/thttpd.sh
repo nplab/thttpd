@@ -5,11 +5,10 @@
 # This goes in /usr/local/etc/rc.d and gets run at boot-time.
 #
 # Variables available:
-#   thttpd_enable="YES/NO"
-#   thttpd_program="path"
-#   thttpd_pidfile="path"
-#   thttpd_devfs="path"
-#   thttpd_flags="<set as needed>"
+#   thttpd_enable='YES/NO'
+#   thttpd_program='path'
+#   thttpd_pidfile='path'
+#   thttpd_devfs='path'
 #
 # PROVIDE: thttpd
 # REQUIRE: LOGIN FILESYSTEMS
@@ -23,9 +22,9 @@ rcvar='thttpd_enable'
 load_rc_config "$name"
 
 # Defaults.
-thttpd_enable=${thttpd_enable:-'NO'}
-thttpd_program=${thttpd_program:-'/usr/local/sbin/thttpd'}
-thttpd_pidfile=${thttpd_pidfile:-'/var/run/thttpd.pid'}
+thttpd_enable="${thttpd_enable:-'NO'}"
+thttpd_program="${thttpd_program:-'/usr/local/sbin/thttpd'}"
+thttpd_pidfile="${thttpd_pidfile:-'/var/run/thttpd.pid'}"
 
 thttpd_precmd ()
     {
@@ -34,7 +33,6 @@ thttpd_precmd ()
 	devfs -m "$thttpd_devfs" rule -s 1 applyset
 	devfs -m "$thttpd_devfs" rule -s 2 applyset
     fi
-    rc_flags="-i ${thttpd_pidfile} ${rc_flags}"
     }
 
 thttpd_stop ()

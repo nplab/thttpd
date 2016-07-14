@@ -33,18 +33,13 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#ifdef HAVE_NETINET_SCTP_H
-#include <netinet/sctp.h>
-#endif
 #include <arpa/inet.h>
 #include <netdb.h>
 
 #if defined(AF_INET6) && defined(IN6_IS_ADDR_V4MAPPED)
 #define USE_IPV6
 #endif
-#ifdef HAVE_NETINET_SCTP_H
-#define USE_SCTP
-#endif
+
 
 /* A few convenient defines. */
 
@@ -85,9 +80,6 @@ typedef struct {
     int max_age;
     char* cwd;
     int listen4_fd, listen6_fd;
-#ifdef USE_SCTP
-    int listensctp_fd;
-#endif
     int no_log;
     FILE* logfp;
     int no_symlink_check;
@@ -152,13 +144,6 @@ typedef struct {
     int should_linger;
     struct stat sb;
     int conn_fd;
-#ifdef USE_SCTP
-    int is_sctp;
-    unsigned int no_i_streams;
-    unsigned int no_o_streams;
-    size_t send_at_once_limit;
-    int use_eeor;
-#endif
     char* file_address;
     } httpd_conn;
 
@@ -213,8 +198,7 @@ void httpd_terminate( httpd_server* hs );
 ** The caller is also responsible for setting initialized to zero before the
 ** first call using each different httpd_conn.
 */
-int httpd_get_conn(
-    httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp );
+int httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc );
 #define GC_FAIL 0
 #define GC_OK 1
 #define GC_NO_MORE 2
@@ -293,16 +277,10 @@ void httpd_set_ndelay( int fd );
 void httpd_clear_ndelay( int fd );
 
 /* Read the requested buffer completely, accounting for interruptions. */
-ssize_t httpd_read_fully( int fd, void* buf, size_t nbytes );
+int httpd_read_fully( int fd, void* buf, size_t nbytes );
 
 /* Write the requested buffer completely, accounting for interruptions. */
-ssize_t httpd_write_fully( int fd, const char* buf, size_t nbytes );
-#ifdef USE_SCTP
-ssize_t httpd_write_sctp( int fd, const char * buf, size_t nbytes,
-    int use_eeor, int eor, uint32_t ppid, uint16_t sid );
-ssize_t httpd_write_fully_sctp( int fd, const char* buf, size_t nbytes,
-    int use_eeor, int eor, size_t send_at_once_limit );
-#endif
+int httpd_write_fully( int fd, const char* buf, size_t nbytes );
 
 /* Generate debugging statistics syslog message. */
 void httpd_logstats( long secs );

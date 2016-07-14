@@ -134,9 +134,6 @@ static httpd_server* hs = (httpd_server*) 0;
 int terminate = 0;
 time_t start_time, stats_time;
 long stats_connections;
-#ifdef USE_SCTP
-long stats_associations;
-#endif
 off_t stats_bytes;
 int stats_simultaneous;
 
@@ -153,7 +150,7 @@ static char* e_strdup( char* oldstr );
 static void lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockaddr* sa6P, size_t sa6_len, int* gotv6P );
 static void read_throttlefile( char* tf );
 static void shut_down( void );
-static int handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp );
+static int handle_newconnect( struct timeval* tvP, int listen_fd );
 static void handle_read( connecttab* c, struct timeval* tvP );
 static void handle_send( connecttab* c, struct timeval* tvP );
 static void handle_linger( connecttab* c, struct timeval* tvP );
@@ -680,9 +677,6 @@ main( int argc, char** argv )
 #endif /* STATS_TIME */
     start_time = stats_time = time( (time_t*) 0 );
     stats_connections = 0;
-#ifdef USE_SCTP
-    stats_associations = 0;
-#endif
     stats_bytes = 0;
     stats_simultaneous = 0;
 
@@ -745,10 +739,6 @@ main( int argc, char** argv )
 	    fdwatch_add_fd( hs->listen4_fd, (void*) 0, FDW_READ );
 	if ( hs->listen6_fd != -1 )
 	    fdwatch_add_fd( hs->listen6_fd, (void*) 0, FDW_READ );
-#ifdef USE_SCTP
-	if ( hs->listensctp_fd != -1 )
-	    fdwatch_add_fd( hs->listensctp_fd, (void*) 0, FDW_READ );
-#endif
 	}
 
     /* Main loop. */
@@ -784,7 +774,7 @@ main( int argc, char** argv )
 	if ( hs != (httpd_server*) 0 && hs->listen6_fd != -1 &&
 	     fdwatch_check_fd( hs->listen6_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen6_fd, 0 ) )
+	    if ( handle_newconnect( &tv, hs->listen6_fd ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
@@ -794,25 +784,13 @@ main( int argc, char** argv )
 	if ( hs != (httpd_server*) 0 && hs->listen4_fd != -1 &&
 	     fdwatch_check_fd( hs->listen4_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen4_fd, 0 ) )
+	    if ( handle_newconnect( &tv, hs->listen4_fd ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
 		*/
 		continue;
 	    }
-#ifdef USE_SCTP
-	if ( hs != (httpd_server*) 0 && hs->listensctp_fd != -1 &&
-	     fdwatch_check_fd( hs->listensctp_fd ) )
-	    {
-	    if ( handle_newconnect( &tv, hs->listensctp_fd, 1 ) )
-		/* Go around the loop and do another fdwatch, rather than
-		** dropping through and processing existing connections.
-		** New connections always get priority.
-		*/
-		continue;
-	    }
-#endif
 
 	/* Find the connections that need servicing. */
 	while ( ( c = (connecttab*) fdwatch_get_next_client_data() ) != (connecttab*) -1 )
@@ -842,10 +820,6 @@ main( int argc, char** argv )
 		    fdwatch_del_fd( hs->listen4_fd );
 		if ( hs->listen6_fd != -1 )
 		    fdwatch_del_fd( hs->listen6_fd );
-#ifdef USE_SCTP
-		if ( hs->listensctp_fd != -1 )
-		    fdwatch_del_fd( hs->listensctp_fd );
-#endif
 		httpd_unlisten( hs );
 		}
 	    }
@@ -1508,10 +1482,6 @@ shut_down( void )
 	    fdwatch_del_fd( ths->listen4_fd );
 	if ( ths->listen6_fd != -1 )
 	    fdwatch_del_fd( ths->listen6_fd );
-#ifdef USE_SCTP
-	if ( ths->listensctp_fd != -1 )
-	    fdwatch_del_fd( ths->listensctp_fd );
-#endif
 	httpd_terminate( ths );
 	}
     mmc_term();
@@ -1523,7 +1493,7 @@ shut_down( void )
 
 
 static int
-handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
+handle_newconnect( struct timeval* tvP, int listen_fd )
     {
     connecttab* c;
     ClientData client_data;
@@ -1566,7 +1536,7 @@ handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
 	    }
 
 	/* Get the connection. */
-	switch ( httpd_get_conn( hs, listen_fd, c->hc, is_sctp ) )
+	switch ( httpd_get_conn( hs, listen_fd, c->hc ) )
 	    {
 	    /* Some error happened.  Run the timers, then the
 	    ** existing connections.  Maybe the error will clear.
@@ -1596,14 +1566,7 @@ handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
 
 	fdwatch_add_fd( c->hc->conn_fd, c, FDW_READ );
 
-#ifdef USE_SCTP
-	if ( c->hc->is_sctp)
-	    ++stats_associations;
-	else
-	    ++stats_connections;
-#else
 	++stats_connections;
-#endif
 	if ( num_connects > stats_simultaneous )
 	    stats_simultaneous = num_connects;
 	}
@@ -1741,99 +1704,33 @@ handle_send( connecttab* c, struct timeval* tvP )
     time_t elapsed;
     httpd_conn* hc = c->hc;
     int tind;
-    struct msghdr msg;
-    struct cmsghdr *cmsg;
-    struct iovec iv[2];
-#ifdef USE_SCTP
-#ifdef SCTP_SNDINFO
-    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
-    struct sctp_sndinfo *sndinfo;
-#else
-    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
-    struct sctp_sndrcvinfo *sndrcvinfo;
-#endif
-#endif
 
     if ( c->max_limit == THROTTLE_NOLIMIT )
 	max_bytes = 1000000000L;
     else
 	max_bytes = c->max_limit / 4;	/* send at most 1/4 seconds worth */
-#ifdef USE_SCTP
-    if ( hc->is_sctp )
-	{
-	if ( max_bytes > hc->send_at_once_limit )
-	    max_bytes = hc->send_at_once_limit;
-	}
-#endif
 
-    iv[0].iov_base = hc->response;
-    iv[0].iov_len = hc->responselen;
-    iv[1].iov_base = &(hc->file_address[c->next_byte_index]);
-    iv[1].iov_len = MIN( c->end_byte_index - c->next_byte_index, max_bytes );
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
-    msg.msg_iov = iv;
-    msg.msg_iovlen = 2;
-#ifdef USE_SCTP
-    if ( hc->is_sctp && hc->use_eeor )
+    /* Do we need to write the headers first? */
+    if ( hc->responselen == 0 )
 	{
-	cmsg = (struct cmsghdr *)cmsgbuf;
-	cmsg->cmsg_level = IPPROTO_SCTP;
-#ifdef SCTP_SNDINFO
-	cmsg->cmsg_type = SCTP_SNDINFO;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
-	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
-	sndinfo->snd_sid = 0;
-	sndinfo->snd_flags = 0;
-#ifdef SCTP_EXPLICIT_EOR
-	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
-	    {
-	    sndinfo->snd_flags |= SCTP_EOR;
-#ifdef SCTP_SACK_IMMEDIATELY
-	    sndinfo->snd_flags |= SCTP_SACK_IMMEDIATELY;
-#endif
-
-	    }
-#endif
-	sndinfo->snd_ppid = htonl(0);
-	sndinfo->snd_context = 0;
-	sndinfo->snd_assoc_id = 0;
-	msg.msg_control = cmsg;
-	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
-#else
-	cmsg->cmsg_type = SCTP_SNDRCV;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
-	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
-	sndrcvinfo->sinfo_stream = 0;
-	sndrcvinfo->sinfo_flags = 0;
-#ifdef SCTP_EXPLICIT_EOR
-	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
-	    {
-	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
-#ifdef SCTP_SACK_IMMEDIATELY
-	    sndrcvinfo->sinfo_flags |= SCTP_SACK_IMMEDIATELY;
-#endif
-	    }
-#endif
-	sndrcvinfo->sinfo_ppid = htonl(0);
-	sndrcvinfo->sinfo_context = 0;
-	sndrcvinfo->sinfo_timetolive = 0;
-	sndrcvinfo->sinfo_assoc_id = 0;
-	msg.msg_control = cmsg;
-	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
-#endif
+	/* No, just write the file. */
+	sz = write(
+	    hc->conn_fd, &(hc->file_address[c->next_byte_index]),
+	    MIN( c->end_byte_index - c->next_byte_index, max_bytes ) );
 	}
     else
 	{
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
+	/* Yes.  We'll combine headers and file into a single writev(),
+	** hoping that this generates a single packet.
+	*/
+	struct iovec iv[2];
+
+	iv[0].iov_base = hc->response;
+	iv[0].iov_len = hc->responselen;
+	iv[1].iov_base = &(hc->file_address[c->next_byte_index]);
+	iv[1].iov_len = MIN( c->end_byte_index - c->next_byte_index, max_bytes );
+	sz = writev( hc->conn_fd, iv, 2 );
 	}
-#else
-    msg.msg_control = NULL;
-    msg.msg_controllen = 0;
-#endif
-    msg.msg_flags = 0;
-    sz = sendmsg( hc->conn_fd, &msg, 0 );
 
     if ( sz < 0 && errno == EINTR )
 	return;
@@ -2274,21 +2171,11 @@ thttpd_logstats( long secs )
     {
     if ( secs > 0 )
 	syslog( LOG_NOTICE,
-#ifdef USE_SCTP
-	    "  thttpd - %ld connections (%g/sec), %ld associations (%g/sec), %d max simultaneous, %lld bytes (%g/sec), %d httpd_conns allocated",
-#else
 	    "  thttpd - %ld connections (%g/sec), %d max simultaneous, %lld bytes (%g/sec), %d httpd_conns allocated",
-#endif
 	    stats_connections, (float) stats_connections / secs,
-#ifdef USE_SCTP
-	    stats_associations, (float) stats_associations / secs,
-#endif
 	    stats_simultaneous, (long long) stats_bytes,
 	    (float) stats_bytes / secs, httpd_conn_count );
     stats_connections = 0;
-#ifdef USE_SCTP
-    stats_associations = 0;
-#endif
     stats_bytes = 0;
     stats_simultaneous = 0;
     }
