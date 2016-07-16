@@ -34,6 +34,32 @@
 
 static int match_one( const char* pattern, int patternlen, const char* string );
 
+/* #define NO_OVL_STRCPY	1 */
+#ifndef NO_OVL_STRCPY
+static char *ovl_strcpy( char *dst, const char *psrc );
+#else
+#define ovl_strcpy	strcpy
+#endif /* NO_OVL_STRCPY */
+
+
+char*
+match_nuke_slashpat( char* pattern )
+    {
+    static const char nuke_pattern[] =
+	{ 	MATCH_CHR_PATTERN_SEP,
+		'/',
+		'\0'
+	};
+    char* cp;
+
+    if ( pattern[0] == '/' )
+	(void) ovl_strcpy( pattern, &pattern[1] );
+    while ( ( cp = strstr( pattern, nuke_pattern ) ) != (char*) 0 )
+	(void) ovl_strcpy( cp + 1, cp + 2 );
+    return pattern;
+    }
+
+
 int
 match( const char* pattern, const char* string )
     {
@@ -41,7 +67,7 @@ match( const char* pattern, const char* string )
 
     for (;;)
 	{
-	or = strchr( pattern, '|' );
+	or = strchr( pattern, MATCH_CHR_PATTERN_SEP );
 	if ( or == (char*) 0 )
 	    return match_one( pattern, strlen( pattern ), string );
 	if ( match_one( pattern, or - pattern, string ) )
@@ -58,13 +84,13 @@ match_one( const char* pattern, int patternlen, const char* string )
 
     for ( p = pattern; p - pattern < patternlen; ++p, ++string )
 	{
-	if ( *p == '?' && *string != '\0' )
+	if ( *p == MATCH_CHR_JOLLY_1C && *string != '\0' )
 	    continue;
-	if ( *p == '*' )
+	if ( *p == MATCH_CHR_JOLLY_NC )
 	    {
 	    int i, pl;
 	    ++p;
-	    if ( *p == '*' )
+	    if ( *p == MATCH_CHR_JOLLY_NC )
 		{
 		/* Double-wildcard matches anything. */
 		++p;
@@ -86,3 +112,22 @@ match_one( const char* pattern, int patternlen, const char* string )
 	return 1;
     return 0;
     }
+
+
+#ifndef NO_OVL_STRCPY
+/*
+** Handles properly overlapping source and destination
+** memory locations to workaround strcpy(3) undefined behaviour.
+*/
+static char *
+ovl_strcpy( char *dst, const char *psrc )
+    {
+    char *pdst = dst;
+
+    while ( ( *pdst++ = *psrc++ ) != '\0' )
+	;
+
+    return dst;
+    }
+#endif /* NO_OVL_STRCPY */
+

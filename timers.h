@@ -34,6 +34,10 @@
 #define INFTIM -1
 #endif /* INFTIM */
 
+/* Constants for tmr_create() -> periodic flag argument */
+#define TMR_ONE_SHOT	0
+#define TMR_PERIODIC	1
+
 /* ClientData is a random value that tags along with a timer.  The client
 ** can use it for whatever, and it gets passed to the callback when the
 ** timer triggers.
@@ -49,19 +53,22 @@ extern ClientData JunkClientData;	/* for use when you don't care */
 /* The TimerProc gets called when the timer expires.  It gets passed
 ** the ClientData associated with the timer, and a timeval in case
 ** it wants to schedule another timer.
+** NOTE: a TimerProc MUST NOT cancel or reset its own timer,
+**       anyway it can cancel (tmr_cancel()) or reset (tmr_reset())
+**       other timers.
 */
 typedef void TimerProc( ClientData client_data, struct timeval* nowP );
 
-/* The Timer struct. */
-typedef struct TimerStruct {
-    TimerProc* timer_proc;
-    ClientData client_data;
-    long msecs;
-    int periodic;
-    struct timeval time;
-    struct TimerStruct* prev;
-    struct TimerStruct* next;
-    int hash;
+/* The Timer struct. (32 byte, try to keep it a power of two) */
+typedef struct	TimerStruct {
+    TimerProc*	timer_proc;
+    ClientData	client_data;
+    long	msecs;
+    short	periodic;
+    short	hash;
+    struct timeval	time;
+    struct TimerStruct*	prev;
+    struct TimerStruct*	next;
     } Timer;
 
 /* Initialize the timer package. */

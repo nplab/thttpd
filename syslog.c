@@ -36,12 +36,14 @@
  * SUCH DAMAGE.
  */
 
+#ifdef USE_MY_OLD_SYSLOG
+
 #ifdef __alpha
 #define _XOPEN_SOURCE_EXTENDED
 #endif
 
 /* Always use a network socket.  This lets us run in a chroot() tree. */
-#define USE_INET
+/* #define USE_INET */
 
 #if defined(LIBC_SCCS) && !defined(lint)
 static char sccsid[] = "@(#)syslog.c    8.9 (Berkeley) 9/4/95";
@@ -79,6 +81,10 @@ static char sccsid[] = "@(#)syslog.c    8.9 (Berkeley) 9/4/95";
 
 #ifndef HAVE_STRERROR
 char *strerror(int);
+#endif
+
+#ifndef FD_CLOEXEC
+# define FD_CLOEXEC	1	/* fcntl(2): set close-on-exec bit */
 #endif
 
 #ifndef LOG_PRI
@@ -120,7 +126,7 @@ syslog(int pri, const char *fmt, ...)
 {
 	register int cnt;
 	register char ch, *p, *t;
-	time_t now;
+	time_t now = 0;
 	int fd, saved_errno;
 #ifndef HAVE_VSNPRINTF
 	int panic = 0;
@@ -278,7 +284,11 @@ openlog(const char *ident, int logstat, int logfac)
 		if (LogStat & LOG_NDELAY) {
 			if ((LogFile = socket(AF_UNIX, SOCK_DGRAM, 0)) == -1)
 				return;
-			(void)fcntl(LogFile, F_SETFD, 1);
+			if (fcntl(LogFile, F_SETFD, FD_CLOEXEC) == -1)
+			    {
+			    closelog();
+			    return;
+			    }
 		}
 #else
 #define satosin(sa)     ((struct sockaddr_in *)(sa))
@@ -289,20 +299,18 @@ openlog(const char *ident, int logstat, int logfac)
 		if (LogStat & LOG_NDELAY) {
 			if ((LogFile = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
 				return;
-			(void)fcntl(LogFile, F_SETFD, 1);
-			if (connect(LogFile, &SyslogAddr,
-			    sizeof(SyslogAddr)) < 0) {
-				closelog();
-				return;
-			}
+			if (fcntl(LogFile, F_SETFD, FD_CLOEXEC) == -1)
+			    {
+			    closelog();
+			    return;
+			    }
 		}
 #endif
 	}
 	if (LogFile != -1 && !connected) {
-		if (connect(LogFile, &SyslogAddr, sizeof(SyslogAddr)) == -1) {
-			(void)close(LogFile);
-			LogFile = -1;
-		} else
+		if (connect(LogFile, &SyslogAddr, sizeof(SyslogAddr)) == -1)
+			closelog();
+		else
 			connected = 1;
 	}
 }
@@ -328,3 +336,6 @@ setlogmask(int pmask)
 	return (omask);
 }
 #endif
+
+#endif /* USE_MY_OLD_SYSLOG */
+

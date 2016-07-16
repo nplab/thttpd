@@ -33,8 +33,12 @@
 
 #include "timers.h"
 
+#ifdef notdef
+#define TMR_DEBUG	1		/* enable debug mode */
+#endif
 
-#define HASH_SIZE 67
+#define HASH_NONE -1			/* invalid hash */
+#define HASH_SIZE 101			/* prime number */
 static Timer* timers[HASH_SIZE];
 static Timer* free_timers;
 static int alloc_count, active_count, free_count;
@@ -52,8 +56,8 @@ hash( Timer* t )
     ** recomputes the hash and moves the timer to the appropriate list.
     */
     return (
-	(unsigned int) t->time.tv_sec ^
-	(unsigned int) t->time.tv_usec ) % HASH_SIZE;
+	( (unsigned int) t->time.tv_sec  ) ^
+	( (unsigned int) t->time.tv_usec ) ) % HASH_SIZE;
     }
 
 
@@ -86,8 +90,8 @@ l_add( Timer* t )
 	else
 	    {
 	    /* Walk the list to find the insertion point. */
-	    for ( t2prev = t2, t2 = t2->next; t2 != (Timer*) 0;
-		  t2prev = t2, t2 = t2->next )
+	    for ((t2prev = t2, t2 = t2->next); t2 != (Timer*) 0;
+		 (t2prev = t2, t2 = t2->next))
 		{
 		if ( t->time.tv_sec < t2->time.tv_sec ||
 		     ( t->time.tv_sec == t2->time.tv_sec &&
@@ -130,7 +134,7 @@ l_resort( Timer* t )
     /* Remove the timer from its old list. */
     l_remove( t );
     /* Recompute the hash. */
-    t->hash = hash( t );
+    t->hash = (short) hash( t );
     /* And add it back in to its new list, sorted correctly. */
     l_add( t );
     }
@@ -172,7 +176,7 @@ tmr_create(
     t->timer_proc = timer_proc;
     t->client_data = client_data;
     t->msecs = msecs;
-    t->periodic = periodic;
+    t->periodic = (short) periodic;
     if ( nowP != (struct timeval*) 0 )
 	t->time = *nowP;
     else
@@ -184,7 +188,8 @@ tmr_create(
 	t->time.tv_sec += t->time.tv_usec / 1000000L;
 	t->time.tv_usec %= 1000000L;
 	}
-    t->hash = hash( t );
+    /* Compute hash value */
+    t->hash = (short) hash( t );
     /* Add the new timer to the proper active list. */
     l_add( t );
     ++active_count;
@@ -196,14 +201,53 @@ tmr_create(
 struct timeval*
 tmr_timeout( struct timeval* nowP )
     {
-    long msecs;
+    Timer** t  = &timers[0];
+    Timer** te = &timers[HASH_SIZE];
+    struct timeval *pt0;
     static struct timeval timeout;
 
-    msecs = tmr_mstimeout( nowP );
-    if ( msecs == INFTIM )
+    while ( t != te && *t == (Timer*) 0 )
+	++t;
+
+    if ( t == te )
 	return (struct timeval*) 0;
-    timeout.tv_sec = msecs / 1000L;
-    timeout.tv_usec = ( msecs % 1000L ) * 1000L;
+
+    pt0 = &( (*t)->time );
+
+    /* Since the lists are sorted, we only need to look at the
+    ** first timer on each one.
+    */
+    for ( ++t; t != te; ++t )
+	{
+	if ( *t == (Timer*) 0 )
+	    continue;
+	if ( pt0->tv_sec  < (*t)->time.tv_sec )
+	    continue;
+	if ( pt0->tv_sec  == (*t)->time.tv_sec &&
+	     pt0->tv_usec <= (*t)->time.tv_usec )
+	    continue;
+	pt0 = &((*t)->time);
+	}
+
+    if (  pt0->tv_sec  > nowP->tv_sec ||
+	( pt0->tv_sec == nowP->tv_sec &&
+	  pt0->tv_usec > nowP->tv_usec )
+	)
+	{
+	timeout.tv_sec  = pt0->tv_sec  - nowP->tv_sec;
+	timeout.tv_usec = pt0->tv_usec - nowP->tv_usec;
+	if ( timeout.tv_usec < 0L )
+	    {
+	    timeout.tv_sec--;
+	    timeout.tv_usec += 1000000L;
+	    }
+	return &timeout;
+	}
+
+    /* timeout 0 */
+    timeout.tv_sec  = 0L;
+    timeout.tv_usec = 0L;
+
     return &timeout;
     }
 
@@ -211,36 +255,41 @@ tmr_timeout( struct timeval* nowP )
 long
 tmr_mstimeout( struct timeval* nowP )
     {
-    int h;
-    int gotone;
-    long msecs, m;
-    register Timer* t;
+    long msecs;
+    Timer** t  = &timers[0];
+    Timer** te = &timers[HASH_SIZE];
+    struct timeval *pt0;
 
-    gotone = 0;
-    msecs = 0;          /* make lint happy */
+    while ( t != te && *t == (Timer*) 0 )
+	++t;
+
+    if ( t == te )
+	return INFTIM;
+
+    pt0 = &( (*t)->time );
+
     /* Since the lists are sorted, we only need to look at the
     ** first timer on each one.
     */
-    for ( h = 0; h < HASH_SIZE; ++h )
+    for ( ++t; t != te; ++t )
 	{
-	t = timers[h];
-	if ( t != (Timer*) 0 )
-	    {
-	    m = ( t->time.tv_sec - nowP->tv_sec ) * 1000L +
-		( t->time.tv_usec - nowP->tv_usec ) / 1000L;
-	    if ( ! gotone )
-		{
-		msecs = m;
-		gotone = 1;
-		}
-	    else if ( m < msecs )
-		msecs = m;
-	    }
+	if ( *t == (Timer*) 0 )
+	    continue;
+	if ( pt0->tv_sec  < (*t)->time.tv_sec )
+	    continue;
+	if ( pt0->tv_sec  == (*t)->time.tv_sec &&
+	     pt0->tv_usec <= (*t)->time.tv_usec )
+	    continue;
+	pt0 = &((*t)->time);
 	}
-    if ( ! gotone )
-	return INFTIM;
-    if ( msecs <= 0 )
-	msecs = 0;
+
+    msecs = (long) (
+	    ( pt0->tv_sec - nowP->tv_sec ) * 1000L +
+	    ( pt0->tv_usec - nowP->tv_usec ) / 1000L );
+
+    if ( msecs < 0L )
+	msecs = 0L;
+
     return msecs;
     }
 
@@ -255,7 +304,15 @@ tmr_run( struct timeval* nowP )
     for ( h = 0; h < HASH_SIZE; ++h )
 	for ( t = timers[h]; t != (Timer*) 0; t = next )
 	    {
-	    next = t->next;
+#ifdef TMR_DEBUG
+	    /* if this timer has been removed, then stop walking this list */
+	    if ( t->hash == (short) HASH_NONE )
+		{
+		syslog( LOG_ERR,
+		"tmr_run: timers[%d], PRE callback, t->hash == HASH_NONE", h );
+		break;
+		}
+#endif /* TMR_DEBUG */
 	    /* Since the lists are sorted, as soon as we find a timer
 	    ** that isn't ready yet, we can go on to the next list.
 	    */
@@ -264,20 +321,49 @@ tmr_run( struct timeval* nowP )
 		   t->time.tv_usec > nowP->tv_usec ) )
 		break;
 	    (t->timer_proc)( t->client_data, nowP );
-	    if ( t->periodic )
+#ifdef TMR_DEBUG
+	    /* if this timer has been removed, then stop walking this list */
+	    if ( t->hash == (short) HASH_NONE )
 		{
-		/* Reschedule. */
-		t->time.tv_sec += t->msecs / 1000L;
-		t->time.tv_usec += ( t->msecs % 1000L ) * 1000L;
-		if ( t->time.tv_usec >= 1000000L )
-		    {
-		    t->time.tv_sec += t->time.tv_usec / 1000000L;
-		    t->time.tv_usec %= 1000000L;
-		    }
-		l_resort( t );
+		syslog( LOG_ERR,
+		"tmr_run: timers[%d], POST callback, t->hash == HASH_NONE", h );
+		break;
 		}
-	    else
+#endif /* TMR_DEBUG */
+	    /* This timer is going to be removed from this list or
+	    ** to be moved to another position / list,
+	    ** so we have to save next pointer now.
+	    ** NOTE: a callback MUST NOT cancel or reset its own timer
+	    **       thus current timer should be still valid.
+	    */
+	    next = t->next;
+
+	    /* Eventually remove current timer. */
+	    if ( t->periodic == 0 )
+		{
 		tmr_cancel( t );
+		continue;
+		}
+	    /* Reschedule. */
+	    t->time.tv_sec += t->msecs / 1000L;
+	    t->time.tv_usec += ( t->msecs % 1000L ) * 1000L;
+	    if ( t->time.tv_usec >= 1000000L )
+		{
+		t->time.tv_sec += t->time.tv_usec / 1000000L;
+		t->time.tv_usec %= 1000000L;
+		}
+	    if ( t->time.tv_sec < nowP->tv_sec )
+		{
+		/* System clock has been set to a future time and
+		** OS seems to not handle this change in a monotonic way
+		** OR the program is too busy / loaded and the interval
+		** of time is too short to be handled periodically.
+		** Adjust it to not consume too much CPU
+		** by calling periodic callbacks too often.
+		*/
+		t->time = *nowP;
+		}
+	    l_resort( t );
 	    }
     }
 
@@ -285,6 +371,16 @@ tmr_run( struct timeval* nowP )
 void
 tmr_reset( struct timeval* nowP, Timer* t )
     {
+    if ( t->hash == (short) HASH_NONE )
+#ifdef TMR_DEBUG
+	{
+	syslog( LOG_ERR, "tmr_reset: t->hash == HASH_NONE !" );
+	return;
+	}
+#else
+	return;
+#endif /* TMR_DEBUG */
+
     t->time = *nowP;
     t->time.tv_sec += t->msecs / 1000L;
     t->time.tv_usec += ( t->msecs % 1000L ) * 1000L;
@@ -300,9 +396,21 @@ tmr_reset( struct timeval* nowP, Timer* t )
 void
 tmr_cancel( Timer* t )
     {
+    if ( t->hash == (short) HASH_NONE )
+#ifdef TMR_DEBUG
+	{
+	syslog( LOG_ERR, "tmr_cancel: t->hash == HASH_NONE !" );
+	return;
+	}
+#else
+	return;
+#endif /* TMR_DEBUG */
+
     /* Remove it from its active list. */
     l_remove( t );
     --active_count;
+    /* Reset the hash. */
+    t->hash = (short) HASH_NONE;
     /* And put it on the free list. */
     t->next = free_timers;
     free_timers = t;
@@ -344,7 +452,7 @@ void
 tmr_logstats( long secs )
     {
     syslog(
-	LOG_NOTICE, "  timers - %d allocated, %d active, %d free",
+	LOG_INFO, "  timers - %d allocated, %d active, %d free",
 	alloc_count, active_count, free_count );
     if ( active_count + free_count != alloc_count )
 	syslog( LOG_ERR, "timer counts don't add up!" );

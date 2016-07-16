@@ -28,7 +28,18 @@
 #ifndef _MATCH_H_
 #define _MATCH_H_
 
-/* Simple shell-style filename pattern matcher.  Only does ? and *, and
+/* Jolly / special characters used for match patterns.
+*/
+#define MATCH_CHR_JOLLY_NC	'*'	/* n multiple characters */
+#define MATCH_CHR_JOLLY_1C	'?'	/* 1 character */
+#define MATCH_CHR_PATTERN_SEP	'|'	/* pattern separator */
+
+/* Nukes any leading slashes in pattern.
+** Returns a pointer to start of pattern;  pattern is changed !
+*/
+extern char* match_nuke_slashpat( char* pattern );
+
+/* Simple shell-style filename pattern matcher.  Only does ? * and **, and
 ** multiple patterns separated by |.  Returns 1 or 0.
 */
 extern int match( const char* pattern, const char* string );

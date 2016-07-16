@@ -29,7 +29,7 @@ strerror(errnum)
 {
 	extern int sys_nerr;
 	extern char *sys_errlist[];
-	static char ebuf[20];
+	static char ebuf[64];
 
 	if ((unsigned int)errnum < sys_nerr)
 		return(sys_errlist[errnum]);

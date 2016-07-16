@@ -10,11 +10,37 @@ V_CCOPT="-O"
 if test "$GCC" = yes ; then
 	AC_MSG_CHECKING(gcc version)
 	AC_CACHE_VAL(ac_cv_lbl_gcc_vers,
-	    ac_cv_lbl_gcc_vers=`$CC --version 2>&1 | \
-		sed -e 's/\..*//'`)
+	    [ac_cv_lbl_gcc_vers=`$CC -dumpversion 2>&1 | \
+		sed -e 's/^[[a-z-]]*//'`])
 	AC_MSG_RESULT($ac_cv_lbl_gcc_vers)
-	if test "$ac_cv_lbl_gcc_vers" -gt 1 ; then
+
+	AC_MSG_CHECKING(gcc major version)
+	AC_CACHE_VAL(ac_cv_lbl_gcc_majvers,
+	    [ac_cv_lbl_gcc_majvers=`echo $ac_cv_lbl_gcc_vers | \
+		sed -e 's/\..*//'`])
+	AC_MSG_RESULT($ac_cv_lbl_gcc_majvers)
+
+	AC_MSG_CHECKING(gcc minor version)
+	AC_CACHE_VAL(ac_cv_lbl_gcc_minvers,
+	    [ac_cv_lbl_gcc_minvers=`echo $ac_cv_lbl_gcc_vers | \
+		sed -e 's/^[[0-9]]*\.//' -e 's/\..*//'`])
+	AC_MSG_RESULT($ac_cv_lbl_gcc_minvers)
+
+	if test -n "$ac_cv_lbl_gcc_majvers" &&
+	   test -n "$ac_cv_lbl_gcc_minvers" &&
+	   test "$ac_cv_lbl_gcc_majvers" -gt 1 ; then
+	   #  major version >= 2
+	   if test "$ac_cv_lbl_gcc_majvers" -lt 4 -o	\
+		   "$ac_cv_lbl_gcc_majvers" -eq 4 -a	\
+		   "$ac_cv_lbl_gcc_minvers" -lt 6 ; then
+		# gcc versions < [34].6 may be too buggy or make faster code
+		# when using -O1 instead of -O2;  gcc 2.95.[34] and
+		# some sub versions of RH gcc 2.96.x (heavily patched)
+		# could be good enough to support -O2 or -Os though.
+		V_CCOPT="-O1"
+	   else
 		V_CCOPT="-O2"
+	   fi
 	fi
 fi
 if test -f .devel ; then
@@ -64,7 +90,8 @@ else
 	AC_MSG_RESULT(no)   
 fi
 
-AC_CHECK_HEADERS(fcntl.h grp.h memory.h paths.h poll.h sys/poll.h sys/event.h osreldate.h)
+AC_CHECK_HEADERS(fcntl.h grp.h memory.h paths.h osreldate.h)
+AC_CHECK_HEADERS(sys/event.h sys/epoll.h sys/devpoll.h poll.h sys/poll.h)
 AC_HEADER_TIME
 AC_HEADER_DIRENT
 
@@ -109,21 +136,36 @@ AC_CHECK_FUNC(crypt, , AC_CHECK_LIB(crypt, crypt))
 AC_CHECK_FUNC(hstrerror, ,
     AC_CHECK_LIB(resolv, hstrerror, V_NETLIBS="-lresolv $V_NETLIBS"))
 
-AC_REPLACE_FUNCS(strerror)
-AC_CHECK_FUNCS(waitpid vsnprintf daemon setsid setlogin getaddrinfo getnameinfo gai_strerror kqueue)
 AC_FUNC_MMAP
+AC_REPLACE_FUNCS(strerror)
+AC_CHECK_FUNCS(waitpid vsnprintf daemon setsid setlogin getaddrinfo getnameinfo gai_strerror sigset)
 
+AC_CHECK_FUNCS(kqueue epoll_ctl)
+AC_CHECK_HEADER(sys/devpoll.h,
+	[AC_DEFINE(HAVE_DEVPOLL)] )
 case "$target_os" in
+*bsd*|*darwin*)
+	AC_CHECK_FUNCS(poll select)
+	AC_CHECK_FUNC(sendfile, [AC_DEFINE(HAVE_BSD_SENDFILE)])
+	;;
+*linux*)
+	AC_CHECK_FUNCS(poll select)
+	AC_CHECK_FUNC(sendfile, [AC_DEFINE(HAVE_LINUX_SENDFILE)])
+	;;
 solaris*)
 	dnl Solaris's select() is a bad wrapper routine.
 	AC_CHECK_FUNCS(poll)
+	AC_CHECK_FUNC(sendfilev, [AC_DEFINE(HAVE_SOLARIS_SENDFILEV)])
+	AC_CHECK_LIB(sendfile, sendfilev, LIBS="-lsendfile $LIBS")
 	;;
 *)
-	AC_CHECK_FUNCS(select poll)
+	AC_CHECK_FUNCS(poll select)
 	;;
 esac
 
 AC_ACME_TM_GMTOFF
+AC_ACME_INT64T
+
 AC_ACME_SOCKADDR_STORAGE
 AC_ACME_SOCKADDR_IN6
 

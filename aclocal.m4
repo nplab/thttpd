@@ -139,6 +139,30 @@ AC_DEFUN(AC_ACME_TM_GMTOFF,
     fi])
 
 dnl
+dnl Checks to see if int64_t exists
+dnl
+dnl usage:
+dnl
+dnl	AC_ACME_INT64T
+dnl
+dnl results:
+dnl
+dnl	HAVE_INT64T (defined)
+dnl
+AC_DEFUN(AC_ACME_INT64T,
+    [AC_MSG_CHECKING(if int64_t exists)
+    AC_CACHE_VAL(ac_cv_acme_int64_t,
+	AC_TRY_COMPILE([
+#	include <sys/types.h>],
+	[int64_t i64],
+	ac_cv_acme_int64_t=yes,
+	ac_cv_acme_int64_t=no))
+    AC_MSG_RESULT($ac_cv_acme_int64_t)
+    if test $ac_cv_acme_int64_t = yes ; then
+	    AC_DEFINE(HAVE_INT64T)
+    fi])
+
+dnl
 dnl Checks to see if struct sockaddr_storage exists
 dnl
 dnl usage:
