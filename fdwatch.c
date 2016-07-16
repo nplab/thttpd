@@ -1,6 +1,6 @@
 /* fdwatch.c - fd watcher routines, either select() or poll()
 **
-** Copyright © 1999,2000 by Jef Poskanzer <jef@acme.com>.
+** Copyright ï¿½ 1999,2000 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -823,7 +823,7 @@ kqueue_sync( void )
     if ( nkqevents < 1 )
 	return 0;
 
-    ts.tv_sec = 0
+    ts.tv_sec = 0;
     ts.tv_nsec = 0;
 
     /* Add an invalid fd to stop processing at the end of changelist
@@ -1764,4 +1764,3 @@ select_get_fd( int ridx )
 # error Unknown fdwatch interface !
 
 #endif /* KQUEUE, EPOLL, DEVPOLL, POLL, SELECT */
-

@@ -82,7 +82,7 @@ extern int mmc_cfg_set_param( int param_type, int param_value );
 extern int mmc_is_fdmap( const off_t st_size );
 
 /* Returns MMC_NORMAL if everything succeded otherwise MMC_* (error).
-/* In output parameters it returns a file descriptor or
+** In output parameters it returns a file descriptor or
 ** a pointer to a malloc()ed area or o pointer to an mmap()ed area
 ** for the given file.
 ** You must pass a valid stat buffer on the file and the current time.

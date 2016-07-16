@@ -907,7 +907,7 @@ main( int argc, char** argv )
 	{
 	syslog( LOG_NOTICE,
 	"MAX_SENDFILE_BLK_SIZE: %d bytes",
-	httpd_get_sf_blksize() );
+	(int) httpd_get_sf_blksize() );
 	}
     syslog( LOG_NOTICE,
     "IdleSendRespTmo %ld IdleKeepAliveTmo %ld",

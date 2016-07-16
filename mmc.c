@@ -1,6 +1,6 @@
 /* mmc.c - mmap cache
 **
-** Copyright © 1998,2001 by Jef Poskanzer <jef@acme.com>.
+** Copyright ï¿½ 1998,2001 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,7 @@
 #include <fcntl.h>
 #include <syslog.h>
 #include <errno.h>
+#include <string.h>
 
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
@@ -1831,4 +1832,3 @@ mmc_logstats( long secs )
 	}
 
     }
-
