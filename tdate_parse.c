@@ -1,6 +1,6 @@
 /* tdate_parse - parse string dates into internal form, stripped-down version
 **
-** Copyright © 1995 by Jef Poskanzer <jef@mail.acme.com>.
+** Copyright © 1995 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -59,13 +59,12 @@ pound_case( char* str )
 	}
     }
 
-
 static int
-strlong_compare( const void* v1, const void* v2 )
+strlong_compare( v1, v2 )
+    char* v1;
+    char* v2;
     {
-    const struct strlong* s1 = (const struct strlong*) v1;
-    const struct strlong* s2 = (const struct strlong*) v2;
-    return strcmp( s1->s, s2->s );
+    return strcmp( ((struct strlong*) v1)->s, ((struct strlong*) v2)->s );
     }
 
 
@@ -171,7 +170,7 @@ tm_to_time( struct tm* tmP )
 
     /* Years since epoch, converted to days. */
     t = ( tmP->tm_year - 70 ) * 365;
-    /* Leap days for previous years - this will break in 2100! */
+    /* Leap days for previous years. */
     t += ( tmP->tm_year - 69 ) / 4;
     /* Days for the beginning of this month. */
     t += monthtab[tmP->tm_mon];
@@ -200,7 +199,7 @@ tdate_parse( char* str )
     time_t t;
 
     /* Initialize. */
-    (void) memset( (char*) &tm, 0, sizeof(struct tm) );
+    memset( (char*) &tm, 0, sizeof(struct tm) );
 
     /* Skip initial whitespace ourselves - sscanf is clumsy at this. */
     for ( cp = str; *cp == ' ' || *cp == '\t'; ++cp )

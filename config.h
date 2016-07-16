@@ -1,6 +1,6 @@
 /* config.h - configuration defines for thttpd and libhttpd
 **
-** Copyright © 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@mail.acme.com>.
+** Copyright © 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -77,16 +77,6 @@
 */
 #define CGI_TIMELIMIT 30
 
-/* CONFIGURE: Maximum number of simultaneous CGI programs allowed.
-** If this many are already running, then attempts to run more will
-** return an HTTP 503 error.  If this is not defined then there's
-** no limit (and you'd better have a lot of memory).  This can also be
-** set in the runtime config file.
-*/
-#ifdef notdef
-#define CGI_LIMIT 50
-#endif
-
 /* CONFIGURE: How many seconds to allow for reading the initial request
 ** on a new connection.
 */
@@ -144,7 +134,7 @@
 ** You can override this in the config file with the "charset" setting,
 ** or on the command like with the -T flag.
 */
-#define DEFAULT_CHARSET "UTF-8"
+#define DEFAULT_CHARSET "iso-8859-1"
 
 
 /* Most people won't want to change anything below here. */
@@ -286,7 +276,7 @@
 
 /* CONFIGURE: How often to run the occasional cleanup job.
 */
-#define OCCASIONAL_TIME 120
+#define OCCASIONAL_TIME 300
 
 /* CONFIGURE: Seconds between stats syslogs.  If this is undefined then
 ** no stats are accumulated and no stats syslogs are done.
@@ -300,14 +290,13 @@
 ** a hard limit, thttpd will go over it if you really are accessing
 ** a whole lot of files.
 */
-#define DESIRED_MAX_MAPPED_FILES 1000
+#define DESIRED_MAX_MAPPED_FILES 2000
 
-/* CONFIGURE: The mmap cache also tries to keep the total mapped bytes
-** below this number, so you don't run out of address space.  Again
-** it's not a hard limit, thttpd will go over it if you really are
-** accessing a bunch of large files.
+/* CONFIGURE: Minimum and maximum intervals between child-process reaping,
+** in seconds.
 */
-#define DESIRED_MAX_MAPPED_BYTES 1000000000
+#define MIN_REAP_TIME 30
+#define MAX_REAP_TIME 900
 
 
 /* You almost certainly don't want to change anything below here. */
@@ -318,7 +307,7 @@
 ** regular files to serve, so we set an arbitrary and high byte count
 ** that gets applied to all CGI programs for throttling purposes.
 */
-#define CGI_BYTECOUNT 25000
+#define CGI_BYTECOUNT 50000
 
 /* CONFIGURE: The default port to listen on.  80 is the standard HTTP port.
 */
@@ -327,7 +316,7 @@
 /* CONFIGURE: A list of index filenames to check.  The files are searched
 ** for in this order.
 */
-#define INDEX_NAMES "index.html", "index.htm", "index.xhtml", "index.xht", "Default.htm", "index.cgi"
+#define INDEX_NAMES "index.html", "index.htm", "Default.htm", "index.cgi"
 
 /* CONFIGURE: If this is defined then thttpd will automatically generate
 ** index pages for directories that don't have an explicit index file.
@@ -345,13 +334,8 @@
 #define LOG_UNKNOWN_HEADERS
 #endif
 
-/* CONFIGURE: Whether to fflush() the log file after each request.  If
-** this is turned off there's a slight savings in CPU cycles.
-*/
-#define FLUSH_LOG_EVERY_TIME
-
 /* CONFIGURE: Time between updates of the throttle table's rolling averages. */
-#define THROTTLE_TIME 2
+#define THROTTLE_TIME 60
 
 /* CONFIGURE: The listen() backlog queue length.  The 1024 doesn't actually
 ** get used, the kernel uses its maximum allowed value.  This is a config
@@ -375,10 +359,10 @@
 */
 #define SPARE_FDS 10
 
-/* CONFIGURE: How many milliseconds to leave a connection open while doing a
+/* CONFIGURE: How many seconds to leave a connection open while doing a
 ** lingering close.
 */
-#define LINGER_TIME 500
+#define LINGER_TIME 2
 
 /* CONFIGURE: Maximum number of symbolic links to follow before
 ** assuming there's a loop.

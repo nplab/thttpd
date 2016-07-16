@@ -1,6 +1,6 @@
 /* mmc.c - mmap cache
 **
-** Copyright © 1998,2001,2014 by Jef Poskanzer <jef@mail.acme.com>.
+** Copyright © 1998,2001 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -25,29 +25,19 @@
 ** SUCH DAMAGE.
 */
 
-#include "config.h"
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <stdio.h>
-#include <time.h>
 #include <fcntl.h>
 #include <syslog.h>
-#include <errno.h>
 
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
 #endif /* HAVE_MMAP */
 
 #include "mmc.h"
-#include "libhttpd.h"
-
-#ifndef HAVE_INT64T
-typedef long long int64_t;
-#endif
 
 
 /* Defines. */
@@ -60,19 +50,12 @@ typedef long long int64_t;
 #ifndef DESIRED_MAX_MAPPED_FILES
 #define DESIRED_MAX_MAPPED_FILES 2000
 #endif
-#ifndef DESIRED_MAX_MAPPED_BYTES
-#define DESIRED_MAX_MAPPED_BYTES 1000000000
-#endif
 #ifndef INITIAL_HASH_SIZE
 #define INITIAL_HASH_SIZE (1 << 10)
 #endif
 
-#ifndef MAX
-#define MAX(a,b) ((a)>(b)?(a):(b))
-#endif
-#ifndef MIN
-#define MIN(a,b) ((a)<(b)?(a):(b))
-#endif
+#define max(a,b) ((a)>(b)?(a):(b))
+#define min(a,b) ((a)<(b)?(a):(b))
 
 
 /* The Map struct. */
@@ -80,7 +63,7 @@ typedef struct MapStruct {
     ino_t ino;
     dev_t dev;
     off_t size;
-    time_t ct;
+    time_t ctime;
     int refcount;
     time_t reftime;
     void* addr;
@@ -98,17 +81,15 @@ static Map** hash_table = (Map**) 0;
 static int hash_size;
 static unsigned int hash_mask;
 static time_t expire_age = DEFAULT_EXPIRE_AGE;
-static off_t mapped_bytes = 0;
 
 
 
 /* Forwards. */
-static void panic( void );
 static void really_unmap( Map** mm );
 static int check_hash_size( void );
 static int add_hash( Map* m );
-static Map* find_hash( ino_t ino, dev_t dev, off_t size, time_t ct );
-static unsigned int hash( ino_t ino, dev_t dev, off_t size, time_t ct );
+static Map* find_hash( ino_t ino, dev_t dev, off_t size, time_t ctime );
+static unsigned int hash( ino_t ino, dev_t dev, off_t size, time_t ctime );
 
 
 void*
@@ -183,7 +164,7 @@ mmc_map( char* filename, struct stat* sbP, struct timeval* nowP )
     m->ino = sb.st_ino;
     m->dev = sb.st_dev;
     m->size = sb.st_size;
-    m->ct = sb.st_ctime;
+    m->ctime = sb.st_ctime;
     m->refcount = 1;
     m->reftime = now;
 
@@ -194,18 +175,9 @@ mmc_map( char* filename, struct stat* sbP, struct timeval* nowP )
 	m->addr = (void*) 1;	/* arbitrary non-NULL address */
     else
 	{
-	size_t size_size = (size_t) m->size;	/* loses on files >2GB */
 #ifdef HAVE_MMAP
 	/* Map the file into memory. */
-	m->addr = mmap( 0, size_size, PROT_READ, MAP_PRIVATE, fd, 0 );
-	if ( m->addr == (void*) -1 && errno == ENOMEM )
-	    {
-	    /* Ooo, out of address space.  Free all unreferenced maps
-	    ** and try again.
-	    */
-	    panic();
-	    m->addr = mmap( 0, size_size, PROT_READ, MAP_PRIVATE, fd, 0 );
-	    }
+	m->addr = mmap( 0, m->size, PROT_READ, MAP_SHARED, fd, 0 );
 	if ( m->addr == (void*) -1 )
 	    {
 	    syslog( LOG_ERR, "mmap - %m" );
@@ -216,15 +188,7 @@ mmc_map( char* filename, struct stat* sbP, struct timeval* nowP )
 	    }
 #else /* HAVE_MMAP */
 	/* Read the file into memory. */
-	m->addr = (void*) malloc( size_size );
-	if ( m->addr == (void*) 0 )
-	    {
-	    /* Ooo, out of memory.  Free all unreferenced maps
-	    ** and try again.
-	    */
-	    panic();
-	    m->addr = (void*) malloc( size_size );
-	    }
+	m->addr = (void*) malloc( m->size );
 	if ( m->addr == (void*) 0 )
 	    {
 	    syslog( LOG_ERR, "out of memory storing a file" );
@@ -233,7 +197,7 @@ mmc_map( char* filename, struct stat* sbP, struct timeval* nowP )
 	    --alloc_count;
 	    return (void*) 0;
 	    }
-	if ( httpd_read_fully( fd, m->addr, size_size ) != size_size )
+	if ( read( fd, m->addr, m->size ) != m->size )
 	    {
 	    syslog( LOG_ERR, "read - %m" );
 	    (void) close( fd );
@@ -258,9 +222,6 @@ mmc_map( char* filename, struct stat* sbP, struct timeval* nowP )
     m->next = maps;
     maps = m;
     ++map_count;
-
-    /* Update the total byte count. */
-    mapped_bytes += m->size;
 
     /* And return the address. */
     return m->addr;
@@ -322,15 +283,11 @@ mmc_cleanup( struct timeval* nowP )
 	    mm = &(*mm)->next;
 	}
 
-    /* Adjust the age limit if there are too many bytes mapped, or
-    ** too many or too few files mapped.
-    */
-    if ( mapped_bytes > DESIRED_MAX_MAPPED_BYTES )
-	expire_age = MAX( ( expire_age * 2 ) / 3, DEFAULT_EXPIRE_AGE / 10 );
-    else if ( map_count > DESIRED_MAX_MAPPED_FILES )
-	expire_age = MAX( ( expire_age * 2 ) / 3, DEFAULT_EXPIRE_AGE / 10 );
+    /* If there are still too many (or too few) maps, adjust the age limit. */
+    if ( map_count > DESIRED_MAX_MAPPED_FILES )
+	expire_age = max( ( expire_age * 2 ) / 3, DEFAULT_EXPIRE_AGE / 10 );
     else if ( map_count < DESIRED_MAX_MAPPED_FILES / 2 )
-	expire_age = MIN( ( expire_age * 5 ) / 4, DEFAULT_EXPIRE_AGE * 3 );
+	expire_age = min( ( expire_age * 5 ) / 4, DEFAULT_EXPIRE_AGE * 3 );
 
     /* Really free excess blocks on the free list. */
     while ( free_count > DESIRED_FREE_COUNT )
@@ -340,26 +297,6 @@ mmc_cleanup( struct timeval* nowP )
 	--free_count;
 	free( (void*) m );
 	--alloc_count;
-	}
-    }
-
-
-static void
-panic( void )
-    {
-    Map** mm;
-    Map* m;
-
-    syslog( LOG_ERR, "mmc panic - freeing all unreferenced maps" );
-
-    /* Really unmap all unreferenced entries. */
-    for ( mm = &maps; *mm != (Map*) 0; )
-	{
-	m = *mm;
-	if ( m->refcount == 0 )
-	    really_unmap( mm );
-	else
-	    mm = &(*mm)->next;
 	}
     }
 
@@ -379,8 +316,6 @@ really_unmap( Map** mm )
 	free( (void*) m->addr );
 #endif /* HAVE_MMAP */
 	}
-    /* Update the total byte count. */
-    mapped_bytes -= m->size;
     /* And move the Map to the free list. */
     *mm = m->next;
     --map_count;
@@ -395,7 +330,7 @@ really_unmap( Map** mm )
 
 
 void
-mmc_term( void )
+mmc_destroy( void )
     {
     Map* m;
 
@@ -460,7 +395,7 @@ add_hash( Map* m )
     {
     unsigned int h, he, i;
 
-    h = hash( m->ino, m->dev, m->size, m->ct );
+    h = hash( m->ino, m->dev, m->size, m->ctime );
     he = ( h + hash_size - 1 ) & hash_mask;
     for ( i = h; ; i = ( i + 1 ) & hash_mask )
 	{
@@ -479,12 +414,12 @@ add_hash( Map* m )
 
 
 static Map*
-find_hash( ino_t ino, dev_t dev, off_t size, time_t ct )
+find_hash( ino_t ino, dev_t dev, off_t size, time_t ctime )
     {
     unsigned int h, he, i;
     Map* m;
 
-    h = hash( ino, dev, size, ct );
+    h = hash( ino, dev, size, ctime );
     he = ( h + hash_size - 1 ) & hash_mask;
     for ( i = h; ; i = ( i + 1 ) & hash_mask )
 	{
@@ -492,7 +427,7 @@ find_hash( ino_t ino, dev_t dev, off_t size, time_t ct )
 	if ( m == (Map*) 0 )
 	    break;
 	if ( m->hash == h && m->ino == ino && m->dev == dev &&
-	     m->size == size && m->ct == ct )
+	     m->size == size && m->ctime == ctime )
 	    return m;
 	if ( i == he )
 	    break;
@@ -502,7 +437,7 @@ find_hash( ino_t ino, dev_t dev, off_t size, time_t ct )
 
 
 static unsigned int
-hash( ino_t ino, dev_t dev, off_t size, time_t ct )
+hash( ino_t ino, dev_t dev, off_t size, time_t ctime )
     {
     unsigned int h = 177573;
 
@@ -512,7 +447,7 @@ hash( ino_t ino, dev_t dev, off_t size, time_t ct )
     h += h << 5;
     h ^= size;
     h += h << 5;
-    h ^= ct;
+    h ^= ctime;
 
     return h & hash_mask;
     }
@@ -523,9 +458,8 @@ void
 mmc_logstats( long secs )
     {
     syslog(
-	LOG_NOTICE, "  map cache - %d allocated, %d active (%lld bytes), %d free; hash size: %d; expire age: %lld",
-	alloc_count, map_count, (long long) mapped_bytes, free_count, hash_size,
-	(long long)expire_age );
+	LOG_NOTICE, "  map cache - %d allocated, %d active, %d free; hash size: %d; expire age: %ld",
+	alloc_count, map_count, free_count, hash_size, expire_age );
     if ( map_count + free_count != alloc_count )
 	syslog( LOG_ERR, "map counts don't add up!" );
     }

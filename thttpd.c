@@ -1,7 +1,7 @@
 /* thttpd.c - tiny/turbo/throttling HTTP server
 **
-** Copyright © 1995,1998,1999,2000,2001,2015 by
-** Jef Poskanzer <jef@mail.acme.com>. All rights reserved.
+** Copyright © 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
+** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions
@@ -33,7 +33,6 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <sys/uio.h>
 
 #include <errno.h>
@@ -60,25 +59,15 @@
 #include "timers.h"
 #include "match.h"
 
-#ifndef SHUT_WR
-#define SHUT_WR 1
-#endif
-
-#ifndef HAVE_INT64T
-typedef long long int64_t;
-#endif
-
 
 static char* argv0;
 static int debug;
-static unsigned short port;
+static int port;
 static char* dir;
-static char* data_dir;
-static int do_chroot, no_log, no_symlink_check, do_vhost, do_global_passwd;
+static int do_chroot, no_log, no_symlink, do_vhost, do_global_passwd;
 static char* cgi_pattern;
-static int cgi_limit;
 static char* url_pattern;
-static int no_empty_referrers;
+static int no_empty_referers;
 static char* local_pattern;
 static char* logfile;
 static char* throttlefile;
@@ -86,13 +75,11 @@ static char* hostname;
 static char* pidfile;
 static char* user;
 static char* charset;
-static char* p3p;
-static int max_age;
 
 
 typedef struct {
     char* pattern;
-    long max_limit, min_limit;
+    long limit;
     long rate;
     off_t bytes_since_avg;
     int num_sending;
@@ -100,26 +87,27 @@ typedef struct {
 static throttletab* throttles;
 static int numthrottles, maxthrottles;
 
-#define THROTTLE_NOLIMIT -1
+#define THROTTLE_NOLIMIT 1234567890L	/* default limit (if none) */
 
 
 typedef struct {
     int conn_state;
-    int next_free_connect;
     httpd_conn* hc;
     int tnums[MAXTHROTTLENUMS];         /* throttle indexes */
     int numtnums;
-    long max_limit, min_limit;
-    time_t started_at, active_at;
+    long limit;
+    time_t started_at;
+    Timer* idle_read_timer;
+    Timer* idle_send_timer;
     Timer* wakeup_timer;
     Timer* linger_timer;
     long wouldblock_delay;
     off_t bytes;
-    off_t end_byte_index;
-    off_t next_byte_index;
+    off_t bytes_sent;
+    off_t bytes_to_send;
     } connecttab;
 static connecttab* connects;
-static int num_connects, max_connects, first_free_connect;
+static int numconnects, maxconnects;
 static int httpd_conn_count;
 
 /* The connection states. */
@@ -133,14 +121,10 @@ static int httpd_conn_count;
 static httpd_server* hs = (httpd_server*) 0;
 int terminate = 0;
 time_t start_time, stats_time;
-long stats_connections;
-#ifdef USE_SCTP
-long stats_associations;
-#endif
-off_t stats_bytes;
+long stats_connections, stats_bytes;
 int stats_simultaneous;
 
-static volatile int got_hup, got_usr1, watchdog_flag;
+static int got_usr1;
 
 
 /* Forwards. */
@@ -151,19 +135,19 @@ static void value_required( char* name, char* value );
 static void no_value_required( char* name, char* value );
 static char* e_strdup( char* oldstr );
 static void lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockaddr* sa6P, size_t sa6_len, int* gotv6P );
-static void read_throttlefile( char* tf );
+static void read_throttlefile( char* throttlefile );
 static void shut_down( void );
-static int handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp );
+static int handle_newconnect( struct timeval* tvP, int listen_fd );
 static void handle_read( connecttab* c, struct timeval* tvP );
 static void handle_send( connecttab* c, struct timeval* tvP );
 static void handle_linger( connecttab* c, struct timeval* tvP );
 static int check_throttles( connecttab* c );
 static void clear_throttles( connecttab* c, struct timeval* tvP );
 static void update_throttles( ClientData client_data, struct timeval* nowP );
-static void finish_connection( connecttab* c, struct timeval* tvP );
 static void clear_connection( connecttab* c, struct timeval* tvP );
 static void really_clear_connection( connecttab* c, struct timeval* tvP );
-static void idle( ClientData client_data, struct timeval* nowP );
+static void idle_read_connection( ClientData client_data, struct timeval* nowP );
+static void idle_send_connection( ClientData client_data, struct timeval* nowP );
 static void wakeup_connection( ClientData client_data, struct timeval* nowP );
 static void linger_clear_connection( ClientData client_data, struct timeval* nowP );
 static void occasional( ClientData client_data, struct timeval* nowP );
@@ -174,12 +158,9 @@ static void logstats( struct timeval* nowP );
 static void thttpd_logstats( long secs );
 
 
-/* SIGTERM and SIGINT say to exit immediately. */
 static void
 handle_term( int sig )
     {
-    /* Don't need to set up the handler again, since it's a one-shot. */
-
     shut_down();
     syslog( LOG_NOTICE, "exiting due to signal %d", sig );
     closelog();
@@ -187,165 +168,21 @@ handle_term( int sig )
     }
 
 
-/* SIGCHLD - a chile process exitted, so we need to reap the zombie */
-static void
-handle_chld( int sig )
-    {
-    const int oerrno = errno;
-    pid_t pid;
-    int status;
-
-#ifndef HAVE_SIGSET
-    /* Set up handler again. */
-    (void) signal( SIGCHLD, handle_chld );
-#endif /* ! HAVE_SIGSET */
-
-    /* Reap defunct children until there aren't any more. */
-    for (;;)
-	{
-#ifdef HAVE_WAITPID
-	pid = waitpid( (pid_t) -1, &status, WNOHANG );
-#else /* HAVE_WAITPID */
-	pid = wait3( &status, WNOHANG, (struct rusage*) 0 );
-#endif /* HAVE_WAITPID */
-	if ( (int) pid == 0 )		/* none left */
-	    break;
-	if ( (int) pid < 0 )
-	    {
-	    if ( errno == EINTR || errno == EAGAIN )
-		continue;
-	    /* ECHILD shouldn't happen with the WNOHANG option,
-	    ** but with some kernels it does anyway.  Ignore it.
-	    */
-	    if ( errno != ECHILD )
-		syslog( LOG_ERR, "child wait - %m" );
-	    break;
-	    }
-	/* Decrement the CGI count.  Note that this is not accurate, since
-	** each CGI can involve two or even three child processes.
-	** Decrementing for each child means that when there is heavy CGI
-	** activity, the count will be lower than it should be, and therefore
-	** more CGIs will be allowed than should be.
-	*/
-	if ( hs != (httpd_server*) 0 )
-	    {
-	    --hs->cgi_count;
-	    if ( hs->cgi_count < 0 )
-		hs->cgi_count = 0;
-	    }
-	}
-
-    /* Restore previous errno. */
-    errno = oerrno;
-    }
-
-
-/* SIGHUP says to re-open the log file. */
 static void
 handle_hup( int sig )
     {
-    const int oerrno = errno;
-
-#ifndef HAVE_SIGSET
-    /* Set up handler again. */
-    (void) signal( SIGHUP, handle_hup );
-#endif /* ! HAVE_SIGSET */
-
-    /* Just set a flag that we got the signal. */
-    got_hup = 1;
-
-    /* Restore previous errno. */
-    errno = oerrno;
-    }
-
-
-/* SIGUSR1 says to exit as soon as all current connections are done. */
-static void
-handle_usr1( int sig )
-    {
-    /* Don't need to set up the handler again, since it's a one-shot. */
-
-    if ( num_connects == 0 )
-	{
-	/* If there are no active connections we want to exit immediately
-	** here.  Not only is it faster, but without any connections the
-	** main loop won't wake up until the next new connection.
-	*/
-	shut_down();
-	syslog( LOG_NOTICE, "exiting" );
-	closelog();
-	exit( 0 );
-	}
-
-    /* Otherwise, just set a flag that we got the signal. */
-    got_usr1 = 1;
-
-    /* Don't need to restore old errno, since we didn't do any syscalls. */
-    }
-
-
-/* SIGUSR2 says to generate the stats syslogs immediately. */
-static void
-handle_usr2( int sig )
-    {
-    const int oerrno = errno;
-
-#ifndef HAVE_SIGSET
-    /* Set up handler again. */
-    (void) signal( SIGUSR2, handle_usr2 );
-#endif /* ! HAVE_SIGSET */
-
-    logstats( (struct timeval*) 0 );
-
-    /* Restore previous errno. */
-    errno = oerrno;
-    }
-
-
-/* SIGALRM is used as a watchdog. */
-static void
-handle_alrm( int sig )
-    {
-    const int oerrno = errno;
-
-    /* If nothing has been happening */
-    if ( ! watchdog_flag )
-	{
-	/* Try changing dirs to someplace we can write. */
-	(void) chdir( "/tmp" );
-	/* Dump core. */
-	abort();
-	}
-    watchdog_flag = 0;
-
-#ifndef HAVE_SIGSET
-    /* Set up handler again. */
-    (void) signal( SIGALRM, handle_alrm );
-#endif /* ! HAVE_SIGSET */
-    /* Set up alarm again. */
-    (void) alarm( OCCASIONAL_TIME * 3 );
-
-    /* Restore previous errno. */
-    errno = oerrno;
-    }
-
-
-static void
-re_open_logfile( void )
-    {
     FILE* logfp;
 
-    if ( no_log || hs == (httpd_server*) 0 )
+    if ( no_log )
 	return;
 
     /* Re-open the log file. */
-    if ( logfile != (char*) 0 && strcmp( logfile, "-" ) != 0 )
+    if ( logfile != (char*) 0 )
 	{
-	syslog( LOG_NOTICE, "re-opening logfile" );
 	logfp = fopen( logfile, "a" );
 	if ( logfp == (FILE*) 0 )
 	    {
-	    syslog( LOG_CRIT, "re-opening %.80s - %m", logfile );
+	    syslog( LOG_CRIT, "reopening %.80s - %m", logfile );
 	    return;
 	    }
 	(void) fcntl( fileno( logfp ), F_SETFD, 1 );
@@ -354,17 +191,31 @@ re_open_logfile( void )
     }
 
 
+static void
+handle_usr1( int sig )
+    {
+    got_usr1 = 1;
+    }
+
+
+static void
+handle_usr2( int sig )
+    {
+    logstats( (struct timeval*) 0 );
+    }
+
+
 int
 main( int argc, char** argv )
     {
     char* cp;
     struct passwd* pwd;
-    uid_t uid = 32767;
-    gid_t gid = 32767;
-    char cwd[MAXPATHLEN+1];
+    uid_t uid;
+    gid_t gid;
+    char cwd[MAXPATHLEN];
     FILE* logfp;
     int num_ready;
-    int cnum;
+    int cnum, ridx;
     connecttab* c;
     httpd_conn* hc;
     httpd_sockaddr sa4;
@@ -383,6 +234,14 @@ main( int argc, char** argv )
 
     /* Handle command-line arguments. */
     parse_args( argc, argv );
+
+    /* Check port number. */
+    if ( port <= 0 )
+	{
+	syslog( LOG_CRIT, "illegal port number" );
+	(void) fprintf( stderr, "%s: illegal port number\n", argv0 );
+	exit( 1 );
+	}
 
     /* Read zone info now, in case we chroot(). */
     tzset();
@@ -403,22 +262,6 @@ main( int argc, char** argv )
     if ( throttlefile != (char*) 0 )
 	read_throttlefile( throttlefile );
 
-    /* If we're root and we're going to become another user, get the uid/gid
-    ** now.
-    */
-    if ( getuid() == 0 )
-	{
-	pwd = getpwnam( user );
-	if ( pwd == (struct passwd*) 0 )
-	    {
-	    syslog( LOG_CRIT, "unknown user - '%.80s'", user );
-	    (void) fprintf( stderr, "%s: unknown user - '%s'\n", argv0, user );
-	    exit( 1 );
-	    }
-	uid = pwd->pw_uid;
-	gid = pwd->pw_gid;
-	}
-
     /* Log file. */
     if ( logfile != (char*) 0 )
 	{
@@ -427,8 +270,6 @@ main( int argc, char** argv )
 	    no_log = 1;
 	    logfp = (FILE*) 0;
 	    }
-	else if ( strcmp( logfile, "-" ) == 0 )
-	    logfp = stdout;
 	else
 	    {
 	    logfp = fopen( logfile, "a" );
@@ -438,27 +279,22 @@ main( int argc, char** argv )
 		perror( logfile );
 		exit( 1 );
 		}
-	    if ( logfile[0] != '/' )
-		{
-		syslog( LOG_WARNING, "logfile is not an absolute path, you may not be able to re-open it" );
-		(void) fprintf( stderr, "%s: logfile is not an absolute path, you may not be able to re-open it\n", argv0 );
-		}
 	    (void) fcntl( fileno( logfp ), F_SETFD, 1 );
-	    if ( getuid() == 0 )
-		{
-		/* If we are root then we chown the log file to the user we'll
-		** be switching to.
-		*/
-		if ( fchown( fileno( logfp ), uid, gid ) < 0 )
-		    {
-		    syslog( LOG_WARNING, "fchown logfile - %m" );
-		    perror( "fchown logfile" );
-		    }
-		}
 	    }
 	}
     else
 	logfp = (FILE*) 0;
+
+    /* Figure out uid/gid from user. */
+    pwd = getpwnam( user );
+    if ( pwd == (struct passwd*) 0 )
+	{
+	syslog( LOG_CRIT, "unknown user - '%.80s'", user );
+	(void) fprintf( stderr, "%s: unknown user - '%s'\n", argv0, user );
+	exit( 1 );
+	}
+    uid = pwd->pw_uid;
+    gid = pwd->pw_gid;
 
     /* Switch directories if requested. */
     if ( dir != (char*) 0 )
@@ -497,8 +333,7 @@ main( int argc, char** argv )
 	** them to save file descriptors.
 	*/
 	(void) fclose( stdin );
-	if ( logfp != stdout )
-	    (void) fclose( stdout );
+	(void) fclose( stdout );
 	(void) fclose( stderr );
 
 	/* Daemonize - make ourselves a subprocess. */
@@ -547,17 +382,6 @@ main( int argc, char** argv )
 	(void) fclose( pidfp );
 	}
 
-    /* Initialize the fdwatch package.  Have to do this before chroot,
-    ** if /dev/poll is used.
-    */
-    max_connects = fdwatch_get_nfiles();
-    if ( max_connects < 0 )
-	{
-	syslog( LOG_CRIT, "fdwatch initialization failure" );
-	exit( 1 );
-	}
-    max_connects -= SPARE_FDS;
-
     /* Chroot if requested. */
     if ( do_chroot )
 	{
@@ -566,27 +390,6 @@ main( int argc, char** argv )
 	    syslog( LOG_CRIT, "chroot - %m" );
 	    perror( "chroot" );
 	    exit( 1 );
-	    }
-	/* If we're logging and the logfile's pathname begins with the
-	** chroot tree's pathname, then elide the chroot pathname so
-	** that the logfile pathname still works from inside the chroot
-	** tree.
-	*/
-	if ( logfile != (char*) 0 && strcmp( logfile, "-" ) != 0 )
-	    {
-	    if ( strncmp( logfile, cwd, strlen( cwd ) ) == 0 )
-		{
-		(void) ol_strcpy( logfile, &logfile[strlen( cwd ) - 1] );
-		/* (We already guaranteed that cwd ends with a slash, so leaving
-		** that slash in logfile makes it an absolute pathname within
-		** the chroot tree.)
-		*/
-		}
-	    else
-		{
-		syslog( LOG_WARNING, "logfile is not within the chroot tree, you will not be able to re-open it" );
-		(void) fprintf( stderr, "%s: logfile is not within the chroot tree, you will not be able to re-open it\n", argv0 );
-		}
 	    }
 	(void) strcpy( cwd, "/" );
 	/* Always chdir to / after a chroot. */
@@ -598,41 +401,14 @@ main( int argc, char** argv )
 	    }
 	}
 
-    /* Switch directories again if requested. */
-    if ( data_dir != (char*) 0 )
-	{
-	if ( chdir( data_dir ) < 0 )
-	    {
-	    syslog( LOG_CRIT, "data_dir chdir - %m" );
-	    perror( "data_dir chdir" );
-	    exit( 1 );
-	    }
-	}
-
     /* Set up to catch signals. */
-#ifdef HAVE_SIGSET
-    (void) sigset( SIGTERM, handle_term );
-    (void) sigset( SIGINT, handle_term );
-    (void) sigset( SIGCHLD, handle_chld );
-    (void) sigset( SIGPIPE, SIG_IGN );          /* get EPIPE instead */
-    (void) sigset( SIGHUP, handle_hup );
-    (void) sigset( SIGUSR1, handle_usr1 );
-    (void) sigset( SIGUSR2, handle_usr2 );
-    (void) sigset( SIGALRM, handle_alrm );
-#else /* HAVE_SIGSET */
     (void) signal( SIGTERM, handle_term );
     (void) signal( SIGINT, handle_term );
-    (void) signal( SIGCHLD, handle_chld );
     (void) signal( SIGPIPE, SIG_IGN );          /* get EPIPE instead */
     (void) signal( SIGHUP, handle_hup );
+    got_usr1 = 0;
     (void) signal( SIGUSR1, handle_usr1 );
     (void) signal( SIGUSR2, handle_usr2 );
-    (void) signal( SIGALRM, handle_alrm );
-#endif /* HAVE_SIGSET */
-    got_hup = 0;
-    got_usr1 = 0;
-    watchdog_flag = 0;
-    (void) alarm( OCCASIONAL_TIME * 3 );
 
     /* Initialize the timer package. */
     tmr_init();
@@ -643,9 +419,8 @@ main( int argc, char** argv )
     hs = httpd_initialize(
 	hostname,
 	gotv4 ? &sa4 : (httpd_sockaddr*) 0, gotv6 ? &sa6 : (httpd_sockaddr*) 0,
-	port, cgi_pattern, cgi_limit, charset, p3p, max_age, cwd, no_log, logfp,
-	no_symlink_check, do_vhost, do_global_passwd, url_pattern,
-	local_pattern, no_empty_referrers );
+	port, cgi_pattern, charset, cwd, no_log, logfp, no_symlink, do_vhost,
+	do_global_passwd, url_pattern, local_pattern, no_empty_referers );
     if ( hs == (httpd_server*) 0 )
 	exit( 1 );
 
@@ -653,12 +428,6 @@ main( int argc, char** argv )
     if ( tmr_create( (struct timeval*) 0, occasional, JunkClientData, OCCASIONAL_TIME * 1000L, 1 ) == (Timer*) 0 )
 	{
 	syslog( LOG_CRIT, "tmr_create(occasional) failed" );
-	exit( 1 );
-	}
-    /* Set up the idle timer. */
-    if ( tmr_create( (struct timeval*) 0, idle, JunkClientData, 5 * 1000L, 1 ) == (Timer*) 0 )
-	{
-	syslog( LOG_CRIT, "tmr_create(idle) failed" );
 	exit( 1 );
 	}
     if ( numthrottles > 0 )
@@ -679,11 +448,7 @@ main( int argc, char** argv )
 	}
 #endif /* STATS_TIME */
     start_time = stats_time = time( (time_t*) 0 );
-    stats_connections = 0;
-#ifdef USE_SCTP
-    stats_associations = 0;
-#endif
-    stats_bytes = 0;
+    stats_connections = stats_bytes = 0L;
     stats_simultaneous = 0;
 
     /* If we're root, try to become someone else. */
@@ -717,26 +482,30 @@ main( int argc, char** argv )
 	/* Check for unnecessary security exposure. */
 	if ( ! do_chroot )
 	    syslog(
-		LOG_WARNING,
+		LOG_CRIT,
 		"started as root without requesting chroot(), warning only" );
 	}
 
     /* Initialize our connections table. */
-    connects = NEW( connecttab, max_connects );
+    maxconnects = fdwatch_get_nfiles();
+    if ( maxconnects < 0 )
+	{
+	syslog( LOG_CRIT, "fdwatch initialization failure" );
+	exit( 1 );
+	}
+    maxconnects -= SPARE_FDS;
+    connects = NEW( connecttab, maxconnects );
     if ( connects == (connecttab*) 0 )
 	{
 	syslog( LOG_CRIT, "out of memory allocating a connecttab" );
 	exit( 1 );
 	}
-    for ( cnum = 0; cnum < max_connects; ++cnum )
+    for ( cnum = 0; cnum < maxconnects; ++cnum )
 	{
 	connects[cnum].conn_state = CNST_FREE;
-	connects[cnum].next_free_connect = cnum + 1;
 	connects[cnum].hc = (httpd_conn*) 0;
 	}
-    connects[max_connects - 1].next_free_connect = -1;	/* end of link list */
-    first_free_connect = 0;
-    num_connects = 0;
+    numconnects = 0;
     httpd_conn_count = 0;
 
     if ( hs != (httpd_server*) 0 )
@@ -745,34 +514,22 @@ main( int argc, char** argv )
 	    fdwatch_add_fd( hs->listen4_fd, (void*) 0, FDW_READ );
 	if ( hs->listen6_fd != -1 )
 	    fdwatch_add_fd( hs->listen6_fd, (void*) 0, FDW_READ );
-#ifdef USE_SCTP
-	if ( hs->listensctp_fd != -1 )
-	    fdwatch_add_fd( hs->listensctp_fd, (void*) 0, FDW_READ );
-#endif
 	}
 
     /* Main loop. */
     (void) gettimeofday( &tv, (struct timezone*) 0 );
-    while ( ( ! terminate ) || num_connects > 0 )
+    while ( ( ! terminate ) || numconnects > 0 )
 	{
-	/* Do we need to re-open the log file? */
-	if ( got_hup )
-	    {
-	    re_open_logfile();
-	    got_hup = 0;
-	    }
-
 	/* Do the fd watch. */
 	num_ready = fdwatch( tmr_mstimeout( &tv ) );
 	if ( num_ready < 0 )
 	    {
-	    if ( errno == EINTR || errno == EAGAIN )
+	    if ( errno == EINTR )
 		continue;       /* try again */
 	    syslog( LOG_ERR, "fdwatch - %m" );
 	    exit( 1 );
 	    }
 	(void) gettimeofday( &tv, (struct timezone*) 0 );
-
 	if ( num_ready == 0 )
 	    {
 	    /* No fd's are ready - run the timers. */
@@ -781,55 +538,43 @@ main( int argc, char** argv )
 	    }
 
 	/* Is it a new connection? */
-	if ( hs != (httpd_server*) 0 && hs->listen6_fd != -1 &&
+	if ( hs != (httpd_server*) 0 && hs->listen6_fd != -1 && 
 	     fdwatch_check_fd( hs->listen6_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen6_fd, 0 ) )
+	    if ( handle_newconnect( &tv, hs->listen6_fd ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
 		*/
 		continue;
 	    }
-	if ( hs != (httpd_server*) 0 && hs->listen4_fd != -1 &&
+	if ( hs != (httpd_server*) 0 && hs->listen4_fd != -1 && 
 	     fdwatch_check_fd( hs->listen4_fd ) )
 	    {
-	    if ( handle_newconnect( &tv, hs->listen4_fd, 0 ) )
+	    if ( handle_newconnect( &tv, hs->listen4_fd ) )
 		/* Go around the loop and do another fdwatch, rather than
 		** dropping through and processing existing connections.
 		** New connections always get priority.
 		*/
 		continue;
 	    }
-#ifdef USE_SCTP
-	if ( hs != (httpd_server*) 0 && hs->listensctp_fd != -1 &&
-	     fdwatch_check_fd( hs->listensctp_fd ) )
-	    {
-	    if ( handle_newconnect( &tv, hs->listensctp_fd, 1 ) )
-		/* Go around the loop and do another fdwatch, rather than
-		** dropping through and processing existing connections.
-		** New connections always get priority.
-		*/
-		continue;
-	    }
-#endif
 
 	/* Find the connections that need servicing. */
-	while ( ( c = (connecttab*) fdwatch_get_next_client_data() ) != (connecttab*) -1 )
+	for ( ridx = 0; ridx < num_ready; ++ridx )
 	    {
+	    c = (connecttab*) fdwatch_get_client_data( ridx );
 	    if ( c == (connecttab*) 0 )
 		continue;
 	    hc = c->hc;
-	    if ( ! fdwatch_check_fd( hc->conn_fd ) )
-		/* Something went wrong. */
-		clear_connection( c, &tv );
-	    else
-		switch ( c->conn_state )
-		    {
-		    case CNST_READING: handle_read( c, &tv ); break;
-		    case CNST_SENDING: handle_send( c, &tv ); break;
-		    case CNST_LINGERING: handle_linger( c, &tv ); break;
-		    }
+	    if ( c->conn_state == CNST_READING &&
+		 fdwatch_check_fd( hc->conn_fd ) )
+		handle_read( c, &tv );
+	    else if ( c->conn_state == CNST_SENDING &&
+		 fdwatch_check_fd( hc->conn_fd ) )
+		handle_send( c, &tv );
+	    else if ( c->conn_state == CNST_LINGERING &&
+		 fdwatch_check_fd( hc->conn_fd ) )
+		handle_linger( c, &tv );
 	    }
 	tmr_run( &tv );
 
@@ -838,15 +583,8 @@ main( int argc, char** argv )
 	    terminate = 1;
 	    if ( hs != (httpd_server*) 0 )
 		{
-		if ( hs->listen4_fd != -1 )
-		    fdwatch_del_fd( hs->listen4_fd );
-		if ( hs->listen6_fd != -1 )
-		    fdwatch_del_fd( hs->listen6_fd );
-#ifdef USE_SCTP
-		if ( hs->listensctp_fd != -1 )
-		    fdwatch_del_fd( hs->listensctp_fd );
-#endif
-		httpd_unlisten( hs );
+		httpd_terminate( hs );
+		hs = (httpd_server*) 0;
 		}
 	    }
 	}
@@ -867,14 +605,13 @@ parse_args( int argc, char** argv )
     debug = 0;
     port = DEFAULT_PORT;
     dir = (char*) 0;
-    data_dir = (char*) 0;
 #ifdef ALWAYS_CHROOT
     do_chroot = 1;
 #else /* ALWAYS_CHROOT */
     do_chroot = 0;
 #endif /* ALWAYS_CHROOT */
     no_log = 0;
-    no_symlink_check = do_chroot;
+    no_symlink = do_chroot;
 #ifdef ALWAYS_VHOST
     do_vhost = 1;
 #else /* ALWAYS_VHOST */
@@ -890,13 +627,8 @@ parse_args( int argc, char** argv )
 #else /* CGI_PATTERN */
     cgi_pattern = (char*) 0;
 #endif /* CGI_PATTERN */
-#ifdef CGI_LIMIT
-    cgi_limit = CGI_LIMIT;
-#else /* CGI_LIMIT */
-    cgi_limit = 0;
-#endif /* CGI_LIMIT */
     url_pattern = (char*) 0;
-    no_empty_referrers = 0;
+    no_empty_referers = 0;
     local_pattern = (char*) 0;
     throttlefile = (char*) 0;
     hostname = (char*) 0;
@@ -904,17 +636,10 @@ parse_args( int argc, char** argv )
     pidfile = (char*) 0;
     user = DEFAULT_USER;
     charset = DEFAULT_CHARSET;
-    p3p = "";
-    max_age = -1;
     argn = 1;
     while ( argn < argc && argv[argn][0] == '-' )
 	{
-	if ( strcmp( argv[argn], "-V" ) == 0 )
-	    {
-	    (void) printf( "%s\n", SERVER_SOFTWARE );
-	    exit( 0 );
-	    }
-	else if ( strcmp( argv[argn], "-C" ) == 0 && argn + 1 < argc )
+	if ( strcmp( argv[argn], "-C" ) == 0 && argn + 1 < argc )
 	    {
 	    ++argn;
 	    read_config( argv[argn] );
@@ -922,7 +647,7 @@ parse_args( int argc, char** argv )
 	else if ( strcmp( argv[argn], "-p" ) == 0 && argn + 1 < argc )
 	    {
 	    ++argn;
-	    port = (unsigned short) atoi( argv[argn] );
+	    port = atoi( argv[argn] );
 	    }
 	else if ( strcmp( argv[argn], "-d" ) == 0 && argn + 1 < argc )
 	    {
@@ -932,22 +657,17 @@ parse_args( int argc, char** argv )
 	else if ( strcmp( argv[argn], "-r" ) == 0 )
 	    {
 	    do_chroot = 1;
-	    no_symlink_check = 1;
+	    no_symlink = 1;
 	    }
 	else if ( strcmp( argv[argn], "-nor" ) == 0 )
 	    {
 	    do_chroot = 0;
-	    no_symlink_check = 0;
-	    }
-	else if ( strcmp( argv[argn], "-dd" ) == 0 && argn + 1 < argc )
-	    {
-	    ++argn;
-	    data_dir = argv[argn];
+	    no_symlink = 0;
 	    }
 	else if ( strcmp( argv[argn], "-s" ) == 0 )
-	    no_symlink_check = 0;
+	    no_symlink = 0;
 	else if ( strcmp( argv[argn], "-nos" ) == 0 )
-	    no_symlink_check = 1;
+	    no_symlink = 1;
 	else if ( strcmp( argv[argn], "-u" ) == 0 && argn + 1 < argc )
 	    {
 	    ++argn;
@@ -991,15 +711,10 @@ parse_args( int argc, char** argv )
 	    ++argn;
 	    charset = argv[argn];
 	    }
-	else if ( strcmp( argv[argn], "-P" ) == 0 && argn + 1 < argc )
+	else if ( strcmp( argv[argn], "-V" ) == 0 )
 	    {
-	    ++argn;
-	    p3p = argv[argn];
-	    }
-	else if ( strcmp( argv[argn], "-M" ) == 0 && argn + 1 < argc )
-	    {
-	    ++argn;
-	    max_age = atoi( argv[argn] );
+	    (void) fprintf( stderr, "%s\n", SERVER_SOFTWARE );
+	    exit( 0 );
 	    }
 	else if ( strcmp( argv[argn], "-D" ) == 0 )
 	    debug = 1;
@@ -1016,7 +731,7 @@ static void
 usage( void )
     {
     (void) fprintf( stderr,
-"usage:  %s [-C configfile] [-p port] [-d dir] [-r|-nor] [-dd data_dir] [-s|-nos] [-v|-nov] [-g|-nog] [-u user] [-c cgipat] [-t throttles] [-h host] [-l logfile] [-i pidfile] [-T charset] [-P P3P] [-M maxage] [-V] [-D]\n",
+"usage:  %s [-C configfile] [-p port] [-d dir] [-r|-nor] [-v|-nov] [-g|-nog] [-u user] [-c cgipat] [-t throttles] [-h host] [-l logfile] [-i pidfile] [-T charset] [-V] [-D]\n",
 	argv0 );
     exit( 1 );
     }
@@ -1045,13 +760,11 @@ read_config( char* filename )
 	if ( ( cp = strchr( line, '#' ) ) != (char*) 0 )
 	    *cp = '\0';
 
-	/* Skip leading whitespace. */
-	cp = line;
-	cp += strspn( cp, " \t\n\r" );
-
 	/* Split line into words. */
-	while ( *cp != '\0' )
+	for ( cp = line; *cp != '\0'; cp = cp2 )
 	    {
+	    /* Skip leading whitespace. */
+	    cp += strspn( cp, " \t\n\r" );
 	    /* Find next whitespace. */
 	    cp2 = cp + strcspn( cp, " \t\n\r" );
 	    /* Insert EOS and advance next-word pointer. */
@@ -1071,7 +784,7 @@ read_config( char* filename )
 	    else if ( strcasecmp( name, "port" ) == 0 )
 		{
 		value_required( name, value );
-		port = (unsigned short) atoi( value );
+		port = atoi( value );
 		}
 	    else if ( strcasecmp( name, "dir" ) == 0 )
 		{
@@ -1082,28 +795,33 @@ read_config( char* filename )
 		{
 		no_value_required( name, value );
 		do_chroot = 1;
-		no_symlink_check = 1;
+		no_symlink = 1;
 		}
 	    else if ( strcasecmp( name, "nochroot" ) == 0 )
 		{
 		no_value_required( name, value );
 		do_chroot = 0;
-		no_symlink_check = 0;
+		no_symlink = 0;
 		}
-	    else if ( strcasecmp( name, "data_dir" ) == 0 )
-		{
-		value_required( name, value );
-		data_dir = e_strdup( value );
-		}
-	    else if ( strcasecmp( name, "nosymlinkcheck" ) == 0 )
+	    else if ( strcasecmp( name, "symlink" ) == 0 )
 		{
 		no_value_required( name, value );
-		no_symlink_check = 1;
+		no_symlink = 0;
 		}
-	    else if ( strcasecmp( name, "symlinkcheck" ) == 0 )
+	    else if ( strcasecmp( name, "nosymlink" ) == 0 )
 		{
 		no_value_required( name, value );
-		no_symlink_check = 0;
+		no_symlink = 1;
+		}
+	    else if ( strcasecmp( name, "symlinks" ) == 0 )
+		{
+		no_value_required( name, value );
+		no_symlink = 0;
+		}
+	    else if ( strcasecmp( name, "nosymlinks" ) == 0 )
+		{
+		no_value_required( name, value );
+		no_symlink = 1;
 		}
 	    else if ( strcasecmp( name, "user" ) == 0 )
 		{
@@ -1115,21 +833,15 @@ read_config( char* filename )
 		value_required( name, value );
 		cgi_pattern = e_strdup( value );
 		}
-	    else if ( strcasecmp( name, "cgilimit" ) == 0 )
-		{
-		value_required( name, value );
-		cgi_limit = atoi( value );
-		}
 	    else if ( strcasecmp( name, "urlpat" ) == 0 )
 		{
 		value_required( name, value );
 		url_pattern = e_strdup( value );
 		}
-	    else if ( strcasecmp( name, "noemptyreferers" ) == 0 ||
-	              strcasecmp( name, "noemptyreferrers" ) == 0 )
+	    else if ( strcasecmp( name, "noemptyreferers" ) == 0 )
 		{
 		no_value_required( name, value );
-		no_empty_referrers = 1;
+		no_empty_referers = 1;
 		}
 	    else if ( strcasecmp( name, "localpat" ) == 0 )
 		{
@@ -1181,26 +893,12 @@ read_config( char* filename )
 		value_required( name, value );
 		charset = e_strdup( value );
 		}
-	    else if ( strcasecmp( name, "p3p" ) == 0 )
-		{
-		value_required( name, value );
-		p3p = e_strdup( value );
-		}
-	    else if ( strcasecmp( name, "max_age" ) == 0 )
-		{
-		value_required( name, value );
-		max_age = atoi( value );
-		}
 	    else
 		{
 		(void) fprintf(
 		    stderr, "%s: unknown config option '%s'\n", argv0, name );
 		exit( 1 );
 		}
-
-	    /* Advance to next word. */
-	    cp = cp2;
-	    cp += strspn( cp, " \t\n\r" );
 	    }
 	}
 
@@ -1252,22 +950,22 @@ e_strdup( char* oldstr )
 static void
 lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockaddr* sa6P, size_t sa6_len, int* gotv6P )
     {
-#ifdef USE_IPV6
+#if defined(HAVE_GETADDRINFO) && defined(HAVE_GAI_STRERROR)
 
     struct addrinfo hints;
-    char portstr[10];
-    int gaierr;
     struct addrinfo* ai;
     struct addrinfo* ai2;
-    struct addrinfo* aiv6;
     struct addrinfo* aiv4;
+    struct addrinfo* aiv6;
+    int gaierr;
+    char strport[10];
 
-    (void) memset( &hints, 0, sizeof(hints) );
-    hints.ai_family = PF_UNSPEC;
+    memset( &hints, 0, sizeof(hints) );
+    hints.ai_family = AF_UNSPEC;
     hints.ai_flags = AI_PASSIVE;
     hints.ai_socktype = SOCK_STREAM;
-    (void) snprintf( portstr, sizeof(portstr), "%d", (int) port );
-    if ( (gaierr = getaddrinfo( hostname, portstr, &hints, &ai )) != 0 )
+    (void) snprintf( strport, sizeof(strport), "%d", port );
+    if ( (gaierr = getaddrinfo( hostname, strport, &hints, &ai )) != 0 )
 	{
 	syslog(
 	    LOG_CRIT, "getaddrinfo %.80s - %.80s",
@@ -1278,67 +976,72 @@ lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockad
 	exit( 1 );
 	}
 
-    /* Find the first IPv6 and IPv4 entries. */
-    aiv6 = (struct addrinfo*) 0;
+    /* Find the first IPv4 and IPv6 entries. */
     aiv4 = (struct addrinfo*) 0;
+    aiv6 = (struct addrinfo*) 0;
     for ( ai2 = ai; ai2 != (struct addrinfo*) 0; ai2 = ai2->ai_next )
 	{
 	switch ( ai2->ai_family )
 	    {
-	    case AF_INET6:
-	    if ( aiv6 == (struct addrinfo*) 0 )
-		aiv6 = ai2;
-	    break;
 	    case AF_INET:
 	    if ( aiv4 == (struct addrinfo*) 0 )
 		aiv4 = ai2;
 	    break;
+#if defined(AF_INET6) && defined(HAVE_SOCKADDR_IN6)
+	    case AF_INET6:
+	    if ( aiv6 == (struct addrinfo*) 0 )
+		aiv6 = ai2;
+	    break;
+#endif /* AF_INET6 && HAVE_SOCKADDR_IN6 */
 	    }
-	}
-
-    if ( aiv6 == (struct addrinfo*) 0 )
-	*gotv6P = 0;
-    else
-	{
-	if ( sa6_len < aiv6->ai_addrlen )
-	    {
-	    syslog(
-		LOG_CRIT, "%.80s - sockaddr too small (%lu < %lu)",
-		hostname, (unsigned long) sa6_len,
-		(unsigned long) aiv6->ai_addrlen );
-	    exit( 1 );
-	    }
-	(void) memset( sa6P, 0, sa6_len );
-	(void) memmove( sa6P, aiv6->ai_addr, aiv6->ai_addrlen );
-	*gotv6P = 1;
 	}
 
     if ( aiv4 == (struct addrinfo*) 0 )
-	*gotv4P = 0;
+	*gotv4P = 0; 
     else
 	{
 	if ( sa4_len < aiv4->ai_addrlen )
 	    {
 	    syslog(
-		LOG_CRIT, "%.80s - sockaddr too small (%lu < %lu)",
-		hostname, (unsigned long) sa4_len,
-		(unsigned long) aiv4->ai_addrlen );
+		LOG_CRIT, "%.80s - sockaddr too small (%d < %d)",
+		hostname, sa4_len, aiv4->ai_addrlen );
 	    exit( 1 );
 	    }
-	(void) memset( sa4P, 0, sa4_len );
-	(void) memmove( sa4P, aiv4->ai_addr, aiv4->ai_addrlen );
+	memset( sa4P, 0, sa4_len );
+	memcpy( sa4P, aiv4->ai_addr, aiv4->ai_addrlen );
 	*gotv4P = 1;
+	}
+    if ( aiv6 == (struct addrinfo*) 0 )
+	*gotv6P = 0; 
+    else
+	{
+	if ( sa6_len < aiv6->ai_addrlen )
+	    {
+	    syslog(
+		LOG_CRIT, "%.80s - sockaddr too small (%d < %d)",
+		hostname, sa6_len, aiv6->ai_addrlen );
+	    exit( 1 );
+	    }
+	memset( sa6P, 0, sa6_len );
+	memcpy( sa6P, aiv6->ai_addr, aiv6->ai_addrlen );
+	*gotv6P = 1;
 	}
 
     freeaddrinfo( ai );
 
-#else /* USE_IPV6 */
+#else /* HAVE_GETADDRINFO && HAVE_GAI_STRERROR */
 
     struct hostent* he;
 
     *gotv6P = 0;
 
-    (void) memset( sa4P, 0, sa4_len );
+    memset( sa4P, 0, sa4_len );
+#ifdef notdef
+    /* We don't really need to set sa_len. */
+#ifdef HAVE_SA_LEN
+    sa4P->sa_len = sa4_len;
+#endif /* HAVE_SA_LEN */
+#endif
     sa4P->sa.sa_family = AF_INET;
     if ( hostname == (char*) 0 )
 	sa4P->sa_in.sin_addr.s_addr = htonl( INADDR_ANY );
@@ -1372,33 +1075,33 @@ lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockad
 		    argv0, hostname );
 		exit( 1 );
 		}
-	    (void) memmove(
+	    (void) memcpy(
 		&sa4P->sa_in.sin_addr.s_addr, he->h_addr, he->h_length );
 	    }
 	}
     sa4P->sa_in.sin_port = htons( port );
     *gotv4P = 1;
 
-#endif /* USE_IPV6 */
+#endif /* HAVE_GETADDRINFO && HAVE_GAI_STRERROR */
     }
 
 
 static void
-read_throttlefile( char* tf )
+read_throttlefile( char* throttlefile )
     {
     FILE* fp;
     char buf[5000];
     char* cp;
     int len;
     char pattern[5000];
-    long max_limit, min_limit;
+    long limit;
     struct timeval tv;
 
-    fp = fopen( tf, "r" );
+    fp = fopen( throttlefile, "r" );
     if ( fp == (FILE*) 0 )
 	{
-	syslog( LOG_CRIT, "%.80s - %m", tf );
-	perror( tf );
+	syslog( LOG_CRIT, "%.80s - %m", throttlefile );
+	perror( throttlefile );
 	exit( 1 );
 	}
 
@@ -1423,25 +1126,21 @@ read_throttlefile( char* tf )
 	    continue;
 
 	/* Parse line. */
-	if ( sscanf( buf, " %4900[^ \t] %ld-%ld", pattern, &min_limit, &max_limit ) == 3 )
-	    {}
-	else if ( sscanf( buf, " %4900[^ \t] %ld", pattern, &max_limit ) == 2 )
-	    min_limit = 0;
-	else
+	if ( sscanf( buf, " %4900[^ \t] %ld", pattern, &limit ) != 2 || limit <= 0 )
 	    {
 	    syslog( LOG_CRIT,
-		"unparsable line in %.80s - %.80s", tf, buf );
+		"unparsable line in %.80s - %.80s", throttlefile, buf );
 	    (void) fprintf( stderr,
 		"%s: unparsable line in %.80s - %.80s\n",
-		argv0, tf, buf );
+		argv0, throttlefile, buf );
 	    continue;
 	    }
 
 	/* Nuke any leading slashes in pattern. */
 	if ( pattern[0] == '/' )
-	    (void) ol_strcpy( pattern, &pattern[1] );
+	    (void) strcpy( pattern, &pattern[1] );
 	while ( ( cp = strstr( pattern, "|/" ) ) != (char*) 0 )
-	    (void) ol_strcpy( cp + 1, cp + 2 );
+	    (void) strcpy( cp + 1, cp + 2 );
 
 	/* Check for room in throttles. */
 	if ( numthrottles >= maxthrottles )
@@ -1467,9 +1166,16 @@ read_throttlefile( char* tf )
 	    }
 
 	/* Add to table. */
-	throttles[numthrottles].pattern = e_strdup( pattern );
-	throttles[numthrottles].max_limit = max_limit;
-	throttles[numthrottles].min_limit = min_limit;
+	throttles[numthrottles].pattern = strdup( pattern );
+	if ( throttles[numthrottles].pattern == (char*) 0 )
+	    {
+	    syslog( LOG_CRIT, "out of memory copying a throttle pattern" );
+	    (void) fprintf(
+		stderr, "%s: out of memory copying a throttle pattern\n",
+		argv0 );
+	    exit( 1 );
+	    }
+	throttles[numthrottles].limit = limit;
 	throttles[numthrottles].rate = 0;
 	throttles[numthrottles].bytes_since_avg = 0;
 	throttles[numthrottles].num_sending = 0;
@@ -1488,7 +1194,7 @@ shut_down( void )
 
     (void) gettimeofday( &tv, (struct timezone*) 0 );
     logstats( &tv );
-    for ( cnum = 0; cnum < max_connects; ++cnum )
+    for ( cnum = 0; cnum < maxconnects; ++cnum )
 	{
 	if ( connects[cnum].conn_state != CNST_FREE )
 	    httpd_close_conn( connects[cnum].hc, &tv );
@@ -1504,18 +1210,10 @@ shut_down( void )
 	{
 	httpd_server* ths = hs;
 	hs = (httpd_server*) 0;
-	if ( ths->listen4_fd != -1 )
-	    fdwatch_del_fd( ths->listen4_fd );
-	if ( ths->listen6_fd != -1 )
-	    fdwatch_del_fd( ths->listen6_fd );
-#ifdef USE_SCTP
-	if ( ths->listensctp_fd != -1 )
-	    fdwatch_del_fd( ths->listensctp_fd );
-#endif
 	httpd_terminate( ths );
 	}
-    mmc_term();
-    tmr_term();
+    mmc_destroy();
+    tmr_destroy();
     free( (void*) connects );
     if ( throttles != (throttletab*) 0 )
 	free( (void*) throttles );
@@ -1523,8 +1221,9 @@ shut_down( void )
 
 
 static int
-handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
+handle_newconnect( struct timeval* tvP, int listen_fd )
     {
+    int cnum;
     connecttab* c;
     ClientData client_data;
 
@@ -1535,23 +1234,21 @@ handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
     for (;;)
 	{
 	/* Is there room in the connection table? */
-	if ( num_connects >= max_connects )
+	if ( numconnects >= maxconnects )
 	    {
 	    /* Out of connection slots.  Run the timers, then the
 	    ** existing connections, and maybe we'll free up a slot
 	    ** by the time we get back here.
-	    */
+	    **/
 	    syslog( LOG_WARNING, "too many connections!" );
 	    tmr_run( tvP );
 	    return 0;
 	    }
-	/* Get the first free connection entry off the free list. */
-	if ( first_free_connect == -1 || connects[first_free_connect].conn_state != CNST_FREE )
-	    {
-	    syslog( LOG_CRIT, "the connects free list is messed up" );
-	    exit( 1 );
-	    }
-	c = &connects[first_free_connect];
+	/* Find a free connection entry. */
+	for ( cnum = 0; cnum < maxconnects; ++cnum )
+	    if ( connects[cnum].conn_state == CNST_FREE )
+		break;
+	c = &connects[cnum];
 	/* Make the httpd_conn if necessary. */
 	if ( c->hc == (httpd_conn*) 0 )
 	    {
@@ -1566,29 +1263,27 @@ handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
 	    }
 
 	/* Get the connection. */
-	switch ( httpd_get_conn( hs, listen_fd, c->hc, is_sctp ) )
+	switch ( httpd_get_conn( hs, listen_fd, c->hc ) )
 	    {
-	    /* Some error happened.  Run the timers, then the
-	    ** existing connections.  Maybe the error will clear.
-	    */
 	    case GC_FAIL:
-	    tmr_run( tvP );
-	    return 0;
-
-	    /* No more connections to accept for now. */
 	    case GC_NO_MORE:
 	    return 1;
 	    }
 	c->conn_state = CNST_READING;
-	/* Pop it off the free list. */
-	first_free_connect = c->next_free_connect;
-	c->next_free_connect = -1;
-	++num_connects;
+	++numconnects;
 	client_data.p = c;
-	c->active_at = tvP->tv_sec;
+	c->idle_read_timer = tmr_create(
+	    tvP, idle_read_connection, client_data, IDLE_READ_TIMELIMIT * 1000L,
+	    0 );
+	if ( c->idle_read_timer == (Timer*) 0 )
+	    {
+	    syslog( LOG_CRIT, "tmr_create(idle_read_connection) failed" );
+	    exit( 1 );
+	    }
+	c->idle_send_timer = (Timer*) 0;
 	c->wakeup_timer = (Timer*) 0;
 	c->linger_timer = (Timer*) 0;
-	c->next_byte_index = 0;
+	c->bytes_sent = 0;
 	c->numtnums = 0;
 
 	/* Set the connection file descriptor to no-delay mode. */
@@ -1596,16 +1291,9 @@ handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
 
 	fdwatch_add_fd( c->hc->conn_fd, c, FDW_READ );
 
-#ifdef USE_SCTP
-	if ( c->hc->is_sctp)
-	    ++stats_associations;
-	else
-	    ++stats_connections;
-#else
 	++stats_connections;
-#endif
-	if ( num_connects > stats_simultaneous )
-	    stats_simultaneous = num_connects;
+	if ( numconnects > stats_simultaneous )
+	    stats_simultaneous = numconnects;
 	}
     }
 
@@ -1623,7 +1311,7 @@ handle_read( connecttab* c, struct timeval* tvP )
 	if ( hc->read_size > 5000 )
 	    {
 	    httpd_send_err( hc, 400, httpd_err400title, "", httpd_err400form, "" );
-	    finish_connection( c, tvP );
+	    clear_connection( c, tvP );
 	    return;
 	    }
 	httpd_realloc_str(
@@ -1634,28 +1322,18 @@ handle_read( connecttab* c, struct timeval* tvP )
     sz = read(
 	hc->conn_fd, &(hc->read_buf[hc->read_idx]),
 	hc->read_size - hc->read_idx );
-    if ( sz == 0 )
+    /* Ignore EWOULDBLOCK errors.  At first glance you would think that
+    ** connections returned by fdwatch as readable should never give an
+    ** EWOULDBLOCK; however, this apparently can happen if a packet gets
+    ** garbled.
+    */
+    if ( sz == 0 || ( sz < 0 && ( errno != EWOULDBLOCK ) ) )
 	{
 	httpd_send_err( hc, 400, httpd_err400title, "", httpd_err400form, "" );
-	finish_connection( c, tvP );
-	return;
-	}
-    if ( sz < 0 )
-	{
-	/* Ignore EINTR and EAGAIN.  Also ignore EWOULDBLOCK.  At first glance
-	** you would think that connections returned by fdwatch as readable
-	** should never give an EWOULDBLOCK; however, this apparently can
-	** happen if a packet gets garbled.
-	*/
-	if ( errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK )
-	    return;
-	httpd_send_err(
-	    hc, 400, httpd_err400title, "", httpd_err400form, "" );
-	finish_connection( c, tvP );
+	clear_connection( c, tvP );
 	return;
 	}
     hc->read_idx += sz;
-    c->active_at = tvP->tv_sec;
 
     /* Do we have a complete request yet? */
     switch ( httpd_got_request( hc ) )
@@ -1664,14 +1342,14 @@ handle_read( connecttab* c, struct timeval* tvP )
 	return;
 	case GR_BAD_REQUEST:
 	httpd_send_err( hc, 400, httpd_err400title, "", httpd_err400form, "" );
-	finish_connection( c, tvP );
+	clear_connection( c, tvP );
 	return;
 	}
 
     /* Yes.  Try parsing and resolving it. */
     if ( httpd_parse_request( hc ) < 0 )
 	{
-	finish_connection( c, tvP );
+	clear_connection( c, tvP );
 	return;
 	}
 
@@ -1680,7 +1358,7 @@ handle_read( connecttab* c, struct timeval* tvP )
 	{
 	httpd_send_err(
 	    hc, 503, httpd_err503title, "", httpd_err503form, hc->encodedurl );
-	finish_connection( c, tvP );
+	clear_connection( c, tvP );
 	return;
 	}
 
@@ -1688,36 +1366,31 @@ handle_read( connecttab* c, struct timeval* tvP )
     if ( httpd_start_request( hc, tvP ) < 0 )
 	{
 	/* Something went wrong.  Close down the connection. */
-	finish_connection( c, tvP );
+	clear_connection( c, tvP );
 	return;
 	}
 
-    /* Fill in end_byte_index. */
+    /* Fill in bytes_to_send. */
     if ( hc->got_range )
 	{
-	c->next_byte_index = hc->first_byte_index;
-	c->end_byte_index = hc->last_byte_index + 1;
+	c->bytes_sent = hc->init_byte_loc;
+	c->bytes_to_send = hc->end_byte_loc + 1;
 	}
-    else if ( hc->bytes_to_send < 0 )
-	c->end_byte_index = 0;
     else
-	c->end_byte_index = hc->bytes_to_send;
+	c->bytes_to_send = hc->bytes_to_send;
 
     /* Check if it's already handled. */
     if ( hc->file_address == (char*) 0 )
 	{
 	/* No file address means someone else is handling it. */
-	int tind;
-	for ( tind = 0; tind < c->numtnums; ++tind )
-	    throttles[c->tnums[tind]].bytes_since_avg += hc->bytes_sent;
-	c->next_byte_index = hc->bytes_sent;
-	finish_connection( c, tvP );
+	c->bytes_sent = hc->bytes_sent;
+	clear_connection( c, tvP );
 	return;
 	}
-    if ( c->next_byte_index >= c->end_byte_index )
+    if ( c->bytes_sent >= c->bytes_to_send )
 	{
 	/* There's nothing to send. */
-	finish_connection( c, tvP );
+	clear_connection( c, tvP );
 	return;
 	}
 
@@ -1726,6 +1399,16 @@ handle_read( connecttab* c, struct timeval* tvP )
     c->started_at = tvP->tv_sec;
     c->wouldblock_delay = 0;
     client_data.p = c;
+    tmr_cancel( c->idle_read_timer );
+    c->idle_read_timer = (Timer*) 0;
+    c->idle_send_timer = tmr_create(
+	tvP, idle_send_connection, client_data, IDLE_SEND_TIMELIMIT * 1000L,
+	0 );
+    if ( c->idle_send_timer == (Timer*) 0 )
+	{
+	syslog( LOG_CRIT, "tmr_create(idle_send_connection) failed" );
+	exit( 1 );
+	}
 
     fdwatch_del_fd( hc->conn_fd );
     fdwatch_add_fd( hc->conn_fd, c, FDW_WRITE );
@@ -1735,108 +1418,32 @@ handle_read( connecttab* c, struct timeval* tvP )
 static void
 handle_send( connecttab* c, struct timeval* tvP )
     {
-    size_t max_bytes;
     int sz, coast;
     ClientData client_data;
     time_t elapsed;
     httpd_conn* hc = c->hc;
-    int tind;
-    struct msghdr msg;
-    struct cmsghdr *cmsg;
-    struct iovec iv[2];
-#ifdef USE_SCTP
-#ifdef SCTP_SNDINFO
-    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
-    struct sctp_sndinfo *sndinfo;
-#else
-    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
-    struct sctp_sndrcvinfo *sndrcvinfo;
-#endif
-#endif
 
-    if ( c->max_limit == THROTTLE_NOLIMIT )
-	max_bytes = 1000000000L;
-    else
-	max_bytes = c->max_limit / 4;	/* send at most 1/4 seconds worth */
-#ifdef USE_SCTP
-    if ( hc->is_sctp )
+    /* Do we need to write the headers first? */
+    if ( hc->responselen == 0 )
 	{
-	if ( max_bytes > hc->send_at_once_limit )
-	    max_bytes = hc->send_at_once_limit;
-	}
-#endif
-
-    iv[0].iov_base = hc->response;
-    iv[0].iov_len = hc->responselen;
-    iv[1].iov_base = &(hc->file_address[c->next_byte_index]);
-    iv[1].iov_len = MIN( c->end_byte_index - c->next_byte_index, max_bytes );
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
-    msg.msg_iov = iv;
-    msg.msg_iovlen = 2;
-#ifdef USE_SCTP
-    if ( hc->is_sctp && hc->use_eeor )
-	{
-	cmsg = (struct cmsghdr *)cmsgbuf;
-	cmsg->cmsg_level = IPPROTO_SCTP;
-#ifdef SCTP_SNDINFO
-	cmsg->cmsg_type = SCTP_SNDINFO;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
-	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
-	sndinfo->snd_sid = 0;
-	sndinfo->snd_flags = 0;
-#ifdef SCTP_EXPLICIT_EOR
-	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
-	    {
-	    sndinfo->snd_flags |= SCTP_EOR;
-#ifdef SCTP_SACK_IMMEDIATELY
-	    sndinfo->snd_flags |= SCTP_SACK_IMMEDIATELY;
-#endif
-
-	    }
-#endif
-	sndinfo->snd_ppid = htonl(0);
-	sndinfo->snd_context = 0;
-	sndinfo->snd_assoc_id = 0;
-	msg.msg_control = cmsg;
-	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
-#else
-	cmsg->cmsg_type = SCTP_SNDRCV;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
-	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
-	sndrcvinfo->sinfo_stream = 0;
-	sndrcvinfo->sinfo_flags = 0;
-#ifdef SCTP_EXPLICIT_EOR
-	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
-	    {
-	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
-#ifdef SCTP_SACK_IMMEDIATELY
-	    sndrcvinfo->sinfo_flags |= SCTP_SACK_IMMEDIATELY;
-#endif
-	    }
-#endif
-	sndrcvinfo->sinfo_ppid = htonl(0);
-	sndrcvinfo->sinfo_context = 0;
-	sndrcvinfo->sinfo_timetolive = 0;
-	sndrcvinfo->sinfo_assoc_id = 0;
-	msg.msg_control = cmsg;
-	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
-#endif
+	/* No, just write the file. */
+	sz = write(
+	    hc->conn_fd, &(hc->file_address[c->bytes_sent]),
+	    MIN( c->bytes_to_send - c->bytes_sent, c->limit ) );
 	}
     else
 	{
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-	}
-#else
-    msg.msg_control = NULL;
-    msg.msg_controllen = 0;
-#endif
-    msg.msg_flags = 0;
-    sz = sendmsg( hc->conn_fd, &msg, 0 );
+	/* Yes.  We'll combine headers and file into a single writev(),
+	** hoping that this generates a single packet.
+	*/
+	struct iovec iv[2];
 
-    if ( sz < 0 && errno == EINTR )
-	return;
+	iv[0].iov_base = hc->response;
+	iv[0].iov_len = hc->responselen;
+	iv[1].iov_base = &(hc->file_address[c->bytes_sent]);
+	iv[1].iov_len = MIN( c->bytes_to_send - c->bytes_sent, c->limit );
+	sz = writev( hc->conn_fd, iv, 2 );
+	}
 
     if ( sz == 0 ||
 	 ( sz < 0 && ( errno == EWOULDBLOCK || errno == EAGAIN ) ) )
@@ -1855,8 +1462,6 @@ handle_send( connecttab* c, struct timeval* tvP )
 	c->conn_state = CNST_PAUSING;
 	fdwatch_del_fd( hc->conn_fd );
 	client_data.p = c;
-	if ( c->wakeup_timer != (Timer*) 0 )
-	    syslog( LOG_ERR, "replacing non-null wakeup_timer!" );
 	c->wakeup_timer = tmr_create(
 	    tvP, wakeup_connection, client_data, c->wouldblock_delay, 0 );
 	if ( c->wakeup_timer == (Timer*) 0 )
@@ -1866,7 +1471,6 @@ handle_send( connecttab* c, struct timeval* tvP )
 	    }
 	return;
 	}
-
     if ( sz < 0 )
 	{
 	/* Something went wrong, close this connection.
@@ -1887,7 +1491,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 	}
 
     /* Ok, we wrote something. */
-    c->active_at = tvP->tv_sec;
+    tmr_reset( tvP, c->idle_send_timer );
     /* Was this a headers + file writev()? */
     if ( hc->responselen > 0 )
 	{
@@ -1896,7 +1500,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 	    {
 	    /* Yes; move the unwritten part to the front of the buffer. */
 	    int newlen = hc->responselen - sz;
-	    (void) memmove( hc->response, &(hc->response[sz]), newlen );
+	    (void) memcpy( hc->response, &(hc->response[sz]), newlen );
 	    hc->responselen = newlen;
 	    sz = 0;
 	    }
@@ -1908,16 +1512,14 @@ handle_send( connecttab* c, struct timeval* tvP )
 	    }
 	}
     /* And update how much of the file we wrote. */
-    c->next_byte_index += sz;
+    c->bytes_sent += sz;
     c->hc->bytes_sent += sz;
-    for ( tind = 0; tind < c->numtnums; ++tind )
-	throttles[c->tnums[tind]].bytes_since_avg += sz;
 
     /* Are we done? */
-    if ( c->next_byte_index >= c->end_byte_index )
+    if ( c->bytes_sent >= c->bytes_to_send )
 	{
-	/* This connection is finished! */
-	finish_connection( c, tvP );
+	/* This conection is finished! */
+	clear_connection( c, tvP );
 	return;
 	}
 
@@ -1926,25 +1528,22 @@ handle_send( connecttab* c, struct timeval* tvP )
 	c->wouldblock_delay -= MIN_WOULDBLOCK_DELAY;
 
     /* If we're throttling, check if we're sending too fast. */
-    if ( c->max_limit != THROTTLE_NOLIMIT )
+    if ( c->limit != THROTTLE_NOLIMIT )
 	{
 	elapsed = tvP->tv_sec - c->started_at;
-	if ( elapsed == 0 )
-	    elapsed = 1;	/* count at least one second */
-	if ( c->hc->bytes_sent / elapsed > c->max_limit )
+	if ( elapsed == 0 || c->hc->bytes_sent / elapsed > c->limit )
 	    {
 	    c->conn_state = CNST_PAUSING;
 	    fdwatch_del_fd( hc->conn_fd );
-	    /* How long should we wait to get back on schedule?  If less
-	    ** than a second (integer math rounding), use 1/2 second.
+	    /* When should we send the next c->limit bytes
+	    ** to get back on schedule?  If less than a second
+	    ** (integer math rounding), use 1/8 second.
 	    */
-	    coast = c->hc->bytes_sent / c->max_limit - elapsed;
+	    coast = ( c->hc->bytes_sent + c->limit ) / c->limit - elapsed;
 	    client_data.p = c;
-	    if ( c->wakeup_timer != (Timer*) 0 )
-		syslog( LOG_ERR, "replacing non-null wakeup_timer!" );
 	    c->wakeup_timer = tmr_create(
 		tvP, wakeup_connection, client_data,
-		coast > 0 ? ( coast * 1000L ) : 500L, 0 );
+		coast ? ( coast * 1000L ) : 125L, 0 );
 	    if ( c->wakeup_timer == (Timer*) 0 )
 		{
 		syslog( LOG_CRIT, "tmr_create(wakeup_connection) failed" );
@@ -1952,22 +1551,19 @@ handle_send( connecttab* c, struct timeval* tvP )
 		}
 	    }
 	}
-    /* (No check on min_limit here, that only controls connection startups.) */
     }
 
 
 static void
 handle_linger( connecttab* c, struct timeval* tvP )
     {
-    char buf[4096];
+    char buf[1024];
     int r;
 
     /* In lingering-close mode we just read and ignore bytes.  An error
     ** or EOF ends things, otherwise we go until a timeout.
     */
     r = read( c->hc->conn_fd, buf, sizeof(buf) );
-    if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
-	return;
     if ( r <= 0 )
 	really_clear_connection( c, tvP );
     }
@@ -1977,19 +1573,15 @@ static int
 check_throttles( connecttab* c )
     {
     int tnum;
-    long l;
 
     c->numtnums = 0;
-    c->max_limit = c->min_limit = THROTTLE_NOLIMIT;
+    c->limit = THROTTLE_NOLIMIT;
     for ( tnum = 0; tnum < numthrottles && c->numtnums < MAXTHROTTLENUMS;
 	  ++tnum )
 	if ( match( throttles[tnum].pattern, c->hc->expnfilename ) )
 	    {
 	    /* If we're way over the limit, don't even start. */
-	    if ( throttles[tnum].rate > throttles[tnum].max_limit * 2 )
-		return 0;
-	    /* Also don't start if we're under the minimum. */
-	    if ( throttles[tnum].rate < throttles[tnum].min_limit )
+	    if ( throttles[tnum].rate > throttles[tnum].limit * 2 )
 		return 0;
 	    if ( throttles[tnum].num_sending < 0 )
 		{
@@ -1998,16 +1590,8 @@ check_throttles( connecttab* c )
 		}
 	    c->tnums[c->numtnums++] = tnum;
 	    ++throttles[tnum].num_sending;
-	    l = throttles[tnum].max_limit / throttles[tnum].num_sending;
-	    if ( c->max_limit == THROTTLE_NOLIMIT )
-		c->max_limit = l;
-	    else
-		c->max_limit = MIN( c->max_limit, l );
-	    l = throttles[tnum].min_limit;
-	    if ( c->min_limit == THROTTLE_NOLIMIT )
-		c->min_limit = l;
-	    else
-		c->min_limit = MAX( c->min_limit, l );
+	    c->limit = MIN(
+		c->limit, throttles[tnum].limit / throttles[tnum].num_sending );
 	    }
     return 1;
     }
@@ -2016,73 +1600,37 @@ check_throttles( connecttab* c )
 static void
 clear_throttles( connecttab* c, struct timeval* tvP )
     {
-    int tind;
+    int i, tnum;
 
-    for ( tind = 0; tind < c->numtnums; ++tind )
-	--throttles[c->tnums[tind]].num_sending;
+    for ( i = 0; i < c->numtnums; ++i )
+	{
+	tnum = c->tnums[i];
+	--throttles[tnum].num_sending;
+	throttles[tnum].bytes_since_avg += c->hc->bytes_sent;
+	}
     }
 
 
 static void
 update_throttles( ClientData client_data, struct timeval* nowP )
     {
-    int tnum, tind;
-    int cnum;
-    connecttab* c;
-    long l;
+    int tnum;
 
-    /* Update the average sending rate for each throttle.  This is only used
-    ** when new connections start up.
-    */
     for ( tnum = 0; tnum < numthrottles; ++tnum )
 	{
-	throttles[tnum].rate = ( 2 * throttles[tnum].rate + throttles[tnum].bytes_since_avg / THROTTLE_TIME ) / 3;
+	throttles[tnum].rate =
+	    ( 3 * throttles[tnum].rate +
+	      throttles[tnum].bytes_since_avg / THROTTLE_TIME ) / 4;
 	throttles[tnum].bytes_since_avg = 0;
 	/* Log a warning message if necessary. */
-	if ( throttles[tnum].rate > throttles[tnum].max_limit && throttles[tnum].num_sending != 0 )
+	if ( throttles[tnum].rate > throttles[tnum].limit )
 	    {
-	    if ( throttles[tnum].rate > throttles[tnum].max_limit * 2 )
-		syslog( LOG_NOTICE, "throttle #%d '%.80s' rate %ld greatly exceeding limit %ld; %d sending", tnum, throttles[tnum].pattern, throttles[tnum].rate, throttles[tnum].max_limit, throttles[tnum].num_sending );
+	    if ( throttles[tnum].rate > throttles[tnum].limit * 2 )
+		syslog( LOG_NOTICE, "throttle #%d '%.80s' rate %ld GREATLY exceeding limit %ld", tnum, throttles[tnum].pattern, throttles[tnum].rate, throttles[tnum].limit );
 	    else
-		syslog( LOG_INFO, "throttle #%d '%.80s' rate %ld exceeding limit %ld; %d sending", tnum, throttles[tnum].pattern, throttles[tnum].rate, throttles[tnum].max_limit, throttles[tnum].num_sending );
-	    }
-	if ( throttles[tnum].rate < throttles[tnum].min_limit && throttles[tnum].num_sending != 0 )
-	    {
-	    syslog( LOG_NOTICE, "throttle #%d '%.80s' rate %ld lower than minimum %ld; %d sending", tnum, throttles[tnum].pattern, throttles[tnum].rate, throttles[tnum].min_limit, throttles[tnum].num_sending );
+		syslog( LOG_NOTICE, "throttle #%d '%.80s' rate %ld exceeding limit %ld", tnum, throttles[tnum].pattern, throttles[tnum].rate, throttles[tnum].limit );
 	    }
 	}
-
-    /* Now update the sending rate on all the currently-sending connections,
-    ** redistributing it evenly.
-    */
-    for ( cnum = 0; cnum < max_connects; ++cnum )
-	{
-	c = &connects[cnum];
-	if ( c->conn_state == CNST_SENDING || c->conn_state == CNST_PAUSING )
-	    {
-	    c->max_limit = THROTTLE_NOLIMIT;
-	    for ( tind = 0; tind < c->numtnums; ++tind )
-		{
-		tnum = c->tnums[tind];
-		l = throttles[tnum].max_limit / throttles[tnum].num_sending;
-		if ( c->max_limit == THROTTLE_NOLIMIT )
-		    c->max_limit = l;
-		else
-		    c->max_limit = MIN( c->max_limit, l );
-		}
-	    }
-	}
-    }
-
-
-static void
-finish_connection( connecttab* c, struct timeval* tvP )
-    {
-    /* If we haven't actually sent the buffered response yet, do so now. */
-    httpd_write_response( c->hc );
-
-    /* And clear. */
-    clear_connection( c, tvP );
     }
 
 
@@ -2091,6 +1639,19 @@ clear_connection( connecttab* c, struct timeval* tvP )
     {
     ClientData client_data;
 
+    /* If we haven't actually sent the buffered response yet, do so now. */
+    httpd_write_response( c->hc );
+
+    if ( c->idle_read_timer != (Timer*) 0 )
+	{
+	tmr_cancel( c->idle_read_timer );
+	c->idle_read_timer = 0;
+	}
+    if ( c->idle_send_timer != (Timer*) 0 )
+	{
+	tmr_cancel( c->idle_send_timer );
+	c->idle_send_timer = 0;
+	}
     if ( c->wakeup_timer != (Timer*) 0 )
 	{
 	tmr_cancel( c->wakeup_timer );
@@ -2108,25 +1669,16 @@ clear_connection( connecttab* c, struct timeval* tvP )
     ** circumstances that make a lingering close necessary.  If the flag
     ** isn't set we do the real close now.
     */
-    if ( c->conn_state == CNST_LINGERING )
-	{
-	/* If we were already lingering, shut down for real. */
-	tmr_cancel( c->linger_timer );
-	c->linger_timer = (Timer*) 0;
-	c->hc->should_linger = 0;
-	}
     if ( c->hc->should_linger )
 	{
-	if ( c->conn_state != CNST_PAUSING )
-	    fdwatch_del_fd( c->hc->conn_fd );
 	c->conn_state = CNST_LINGERING;
-	shutdown( c->hc->conn_fd, SHUT_WR );
+	fdwatch_del_fd( c->hc->conn_fd );
 	fdwatch_add_fd( c->hc->conn_fd, c, FDW_READ );
+	/* Make sure we are still in no-delay mode. */
+	httpd_set_ndelay( c->hc->conn_fd );
 	client_data.p = c;
-	if ( c->linger_timer != (Timer*) 0 )
-	    syslog( LOG_ERR, "replacing non-null linger_timer!" );
 	c->linger_timer = tmr_create(
-	    tvP, linger_clear_connection, client_data, LINGER_TIME, 0 );
+	    tvP, linger_clear_connection, client_data, LINGER_TIME * 1000L, 0 );
 	if ( c->linger_timer == (Timer*) 0 )
 	    {
 	    syslog( LOG_CRIT, "tmr_create(linger_clear_connection) failed" );
@@ -2141,9 +1693,8 @@ clear_connection( connecttab* c, struct timeval* tvP )
 static void
 really_clear_connection( connecttab* c, struct timeval* tvP )
     {
-    stats_bytes += c->hc->bytes_sent;
-    if ( c->conn_state != CNST_PAUSING )
-	fdwatch_del_fd( c->hc->conn_fd );
+    stats_bytes += c->bytes_to_send;
+    fdwatch_del_fd( c->hc->conn_fd );
     httpd_close_conn( c->hc, tvP );
     clear_throttles( c, tvP );
     if ( c->linger_timer != (Timer*) 0 )
@@ -2152,45 +1703,41 @@ really_clear_connection( connecttab* c, struct timeval* tvP )
 	c->linger_timer = 0;
 	}
     c->conn_state = CNST_FREE;
-    c->next_free_connect = first_free_connect;
-    first_free_connect = c - connects;	/* division by sizeof is implied */
-    --num_connects;
+    --numconnects;
     }
 
 
 static void
-idle( ClientData client_data, struct timeval* nowP )
+idle_read_connection( ClientData client_data, struct timeval* nowP )
     {
-    int cnum;
     connecttab* c;
 
-    for ( cnum = 0; cnum < max_connects; ++cnum )
+    c = (connecttab*) client_data.p;
+    c->idle_read_timer = (Timer*) 0;
+    if ( c->conn_state != CNST_FREE )
 	{
-	c = &connects[cnum];
-	switch ( c->conn_state )
-	    {
-	    case CNST_READING:
-	    if ( nowP->tv_sec - c->active_at >= IDLE_READ_TIMELIMIT )
-		{
-		syslog( LOG_INFO,
-		    "%.80s connection timed out reading",
-		    httpd_ntoa( &c->hc->client_addr ) );
-		httpd_send_err(
-		    c->hc, 408, httpd_err408title, "", httpd_err408form, "" );
-		finish_connection( c, nowP );
-		}
-	    break;
-	    case CNST_SENDING:
-	    case CNST_PAUSING:
-	    if ( nowP->tv_sec - c->active_at >= IDLE_SEND_TIMELIMIT )
-		{
-		syslog( LOG_INFO,
-		    "%.80s connection timed out sending",
-		    httpd_ntoa( &c->hc->client_addr ) );
-		clear_connection( c, nowP );
-		}
-	    break;
-	    }
+	syslog( LOG_INFO,
+	    "%.80s connection timed out reading",
+	    httpd_ntoa( &c->hc->client_addr ) );
+	httpd_send_err( c->hc, 408, httpd_err408title, "", httpd_err408form, "" );
+	clear_connection( c, nowP );
+	}
+    }
+
+
+static void
+idle_send_connection( ClientData client_data, struct timeval* nowP )
+    {
+    connecttab* c;
+
+    c = (connecttab*) client_data.p;
+    c->idle_send_timer = (Timer*) 0;
+    if ( c->conn_state != CNST_FREE )
+	{
+	syslog( LOG_INFO,
+	    "%.80s connection timed out sending",
+	    httpd_ntoa( &c->hc->client_addr ) );
+	clear_connection( c, nowP );
 	}
     }
 
@@ -2225,7 +1772,6 @@ occasional( ClientData client_data, struct timeval* nowP )
     {
     mmc_cleanup( nowP );
     tmr_cleanup();
-    watchdog_flag = 1;		/* let the watchdog know that we are alive */
     }
 
 
@@ -2272,23 +1818,11 @@ logstats( struct timeval* nowP )
 static void
 thttpd_logstats( long secs )
     {
-    if ( secs > 0 )
-	syslog( LOG_NOTICE,
-#ifdef USE_SCTP
-	    "  thttpd - %ld connections (%g/sec), %ld associations (%g/sec), %d max simultaneous, %lld bytes (%g/sec), %d httpd_conns allocated",
-#else
-	    "  thttpd - %ld connections (%g/sec), %d max simultaneous, %lld bytes (%g/sec), %d httpd_conns allocated",
-#endif
-	    stats_connections, (float) stats_connections / secs,
-#ifdef USE_SCTP
-	    stats_associations, (float) stats_associations / secs,
-#endif
-	    stats_simultaneous, (long long) stats_bytes,
-	    (float) stats_bytes / secs, httpd_conn_count );
-    stats_connections = 0;
-#ifdef USE_SCTP
-    stats_associations = 0;
-#endif
-    stats_bytes = 0;
+    syslog( LOG_NOTICE,
+	"  thttpd - %ld connections (%g/sec), %d max simultaneous, %ld bytes (%g/sec), %d httpd_conns allocated",
+	stats_connections, (float) stats_connections / secs,
+	stats_simultaneous, stats_bytes, (float) stats_bytes / secs,
+	httpd_conn_count );
+    stats_connections = stats_bytes = 0L;
     stats_simultaneous = 0;
     }

@@ -139,50 +139,52 @@ AC_DEFUN(AC_ACME_TM_GMTOFF,
     fi])
 
 dnl
-dnl Checks to see if int64_t exists
+dnl Checks to see if struct sockaddr_storage exists
 dnl
 dnl usage:
 dnl
-dnl	AC_ACME_INT64T
+dnl	AC_ACME_SOCKADDR_STORAGE
 dnl
 dnl results:
 dnl
-dnl	HAVE_INT64T (defined)
+dnl	HAVE_SOCKADDR_STORAGE (defined)
 dnl
-AC_DEFUN(AC_ACME_INT64T,
-    [AC_MSG_CHECKING(if int64_t exists)
-    AC_CACHE_VAL(ac_cv_acme_int64_t,
-	AC_TRY_COMPILE([
-#	include <sys/types.h>],
-	[int64_t i64],
-	ac_cv_acme_int64_t=yes,
-	ac_cv_acme_int64_t=no))
-    AC_MSG_RESULT($ac_cv_acme_int64_t)
-    if test $ac_cv_acme_int64_t = yes ; then
-	    AC_DEFINE(HAVE_INT64T)
-    fi])
-
-dnl
-dnl Checks to see if socklen_t exists
-dnl
-dnl usage:
-dnl
-dnl	AC_ACME_SOCKLENT
-dnl
-dnl results:
-dnl
-dnl	HAVE_SOCKLENT (defined)
-dnl
-AC_DEFUN(AC_ACME_SOCKLENT,
-    [AC_MSG_CHECKING(if socklen_t exists)
-    AC_CACHE_VAL(ac_cv_acme_socklen_t,
+AC_DEFUN(AC_ACME_SOCKADDR_STORAGE,
+    [AC_MSG_CHECKING(if struct sockaddr_storage exists)
+    AC_CACHE_VAL(ac_cv_acme_sockaddr_storage,
 	AC_TRY_COMPILE([
 #	include <sys/types.h>
 #	include <sys/socket.h>],
-	[socklen_t slen],
-	ac_cv_acme_socklen_t=yes,
-	ac_cv_acme_socklen_t=no))
-    AC_MSG_RESULT($ac_cv_acme_socklen_t)
-    if test $ac_cv_acme_socklen_t = yes ; then
-	    AC_DEFINE(HAVE_SOCKLENT)
+	[struct sockaddr_storage sas],
+	ac_cv_acme_sockaddr_storage=yes,
+	ac_cv_acme_sockaddr_storage=no))
+    AC_MSG_RESULT($ac_cv_acme_sockaddr_storage)
+    if test $ac_cv_acme_sockaddr_storage = yes ; then
+	    AC_DEFINE(HAVE_SOCKADDR_STORAGE)
+    fi])
+
+dnl
+dnl Checks to see if struct sockaddr_in6 exists
+dnl
+dnl usage:
+dnl
+dnl	AC_ACME_SOCKADDR_IN6
+dnl
+dnl results:
+dnl
+dnl	HAVE_SOCKADDR_IN6 (defined)
+dnl
+AC_DEFUN(AC_ACME_SOCKADDR_IN6,
+    [AC_MSG_CHECKING(if struct sockaddr_in6 exists)
+    AC_CACHE_VAL(ac_cv_acme_sockaddr_in6,
+	AC_TRY_COMPILE([
+#	include <sys/types.h>
+#	include <sys/socket.h>
+#	include <netinet/in.h>],
+	[struct sockaddr_in6 sa6],
+	ac_cv_acme_sockaddr_in6=yes,
+	ac_cv_acme_sockaddr_in6=no))
+    AC_MSG_RESULT($ac_cv_acme_sockaddr_in6)
+    if test $ac_cv_acme_sockaddr_in6 = yes ; then
+	    AC_DEFINE(HAVE_SOCKADDR_IN6)
     fi])

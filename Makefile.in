@@ -1,6 +1,6 @@
 # Makefile.in for thttpd
 #
-# Copyright © 1995,1998 by Jef Poskanzer <jef@mail.acme.com>.
+# Copyright © 1995,1998 by Jef Poskanzer <jef@acme.com>.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -62,7 +62,7 @@ INSTALL =	@INSTALL@
 	@rm -f $@
 	$(CC) $(CFLAGS) -c $*.c
 
-SRC =		thttpd.c libhttpd.c fdwatch.c mmc.c timers.c match.c tdate_parse.c
+SRC =		thttpd.c libhttpd.c fdwatch.c mmc.c timers.c match.c tdate_parse.c syslog.c
 
 OBJ =		$(SRC:.c=.o) @LIBOBJS@
 
@@ -81,17 +81,19 @@ thttpd: $(OBJ)
 	@rm -f $@
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJ) $(LIBS) $(NETLIBS)
 
+libhttpd.o:		mime_encodings.h
 mime_encodings.h:	mime_encodings.txt
 	rm -f mime_encodings.h
 	sed < mime_encodings.txt > mime_encodings.h \
 	  -e 's/#.*//' -e 's/[ 	]*$$//' -e '/^$$/d' \
-	  -e 's/[ 	][ 	]*/", 0, "/' -e 's/^/{ "/' -e 's/$$/", 0 },/'
+	  -e 's/[ 	][ 	]*/", "/' -e 's/^/{ "/' -e 's/$$/" },/'
 
+libhttpd.o:	mime_types.h
 mime_types.h:	mime_types.txt
 	rm -f mime_types.h
 	sed < mime_types.txt > mime_types.h \
 	  -e 's/#.*//' -e 's/[ 	]*$$//' -e '/^$$/d' \
-	  -e 's/[ 	][ 	]*/", 0, "/' -e 's/^/{ "/' -e 's/$$/", 0 },/'
+	  -e 's/[ 	][ 	]*/", "/' -e 's/^/{ "/' -e 's/$$/" },/'
 
 
 subdirs:
@@ -109,11 +111,9 @@ subdirs:
 install:	installthis install-man installsubdirs
 
 installthis:
-	-mkdir -p $(DESTDIR)$(BINDIR)
 	$(INSTALL) -m 555 -o bin -g bin thttpd $(DESTDIR)$(BINDIR)
 
 install-man:
-	-mkdir -p $(DESTDIR)$(MANDIR)/man8
 	$(INSTALL) -m 444 -o bin -g bin thttpd.8 $(DESTDIR)$(MANDIR)/man8
 
 installsubdirs:
@@ -157,7 +157,7 @@ tar:
 	  rm -rf $$name ; \
 	  mkdir $$name ; \
 	  tar cf - `cat FILES` | ( cd $$name ; tar xfBp - ) ; \
-	  chmod 644 $$name/Makefile.in $$name/config.h $$name/mime_encodings.txt $$name/mime_types.txt ; \
+	  chmod 644 $$name/Makefile.in $$name/config.h $$name/mime_types.txt ; \
 	  chmod 755 $$name/cgi-bin $$name/cgi-src $$name/contrib $$name/contrib/redhat-rpm $$name/extras $$name/scripts ; \
 	  tar cf $$name.tar $$name ; \
 	  rm -rf $$name ; \
@@ -167,7 +167,7 @@ thttpd.o:	config.h version.h libhttpd.h fdwatch.h mmc.h timers.h match.h
 libhttpd.o:	config.h version.h libhttpd.h mime_encodings.h mime_types.h \
 		mmc.h timers.h match.h tdate_parse.h
 fdwatch.o:	fdwatch.h
-mmc.o:		mmc.h libhttpd.h
+mmc.o:		mmc.h
 timers.o:	timers.h
 match.o:	match.h
 tdate_parse.o:	tdate_parse.h

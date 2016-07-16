@@ -1,6 +1,6 @@
 /* makeweb.c - let a user create a web subdirectory
 **
-** Copyright © 1995 by Jef Poskanzer <jef@mail.acme.com>.
+** Copyright © 1995 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -34,12 +34,11 @@
 
 #include "../config.h"
 
-#include <stdlib.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <pwd.h>
 #include <errno.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 

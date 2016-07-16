@@ -1,6 +1,6 @@
 Summary: Throttleable lightweight httpd server
 Name: thttpd
-Version: 2.27
+Version: 2.21b
 Release: 1
 Group: Networking
 URL: http://www.acme.com/software/thttpd
@@ -64,59 +64,38 @@ rm -rf $RPM_BUILD_ROOT
 
 %changelog
 
-* Mon Dec 29 2003 Jef Poskanzer <jef@mail.acme.com>
-  - Updated to 2.26
-
-* Sat Dec 20 2003 Jef Poskanzer <jef@mail.acme.com>
-  - Updated to 2.25b
-
-* Mon Oct 27 2003 Jef Poskanzer <jef@mail.acme.com>
-  - Updated to 2.25
-
-* Sat Sep 13 2003 Jef Poskanzer <jef@mail.acme.com>
-  - Updated to 2.24
-
-* Sat May 25 2002 Jef Poskanzer <jef@mail.acme.com>
-  - Updated to 2.23
-
-* Mon Jul 09 2001 Jef Poskanzer <jef@mail.acme.com>
-  - Updated to 2.22
-
-* Thu Apr 26 2001 Jef Poskanzer <jef@mail.acme.com>
-  - Updated to 2.21c
-
-* Mon Apr 23 2001 Jef Poskanzer <jef@mail.acme.com>
+* Mon Apr 23 2001 Jef Poskanzer <jef@acme.com>
   - Updated to 2.21b
 
-* Mon Oct 02 2000 Jef Poskanzer <jef@mail.acme.com>
+* Mon Oct 02 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.21
 
-* Wed Sep 13 2000 Jef Poskanzer <jef@mail.acme.com>
+* Wed Sep 13 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.20
 
 * Mon Sep 11 2000 Bennett Todd <bet@rahul.net>
   - added thttpd.conf, took config info out of init script
   - switched to logging in /var/log, used pidfile
 
-* Thu Jun 15 2000 Jef Poskanzer <jef@mail.acme.com>
+* Thu Jun 15 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.19
 
-* Thu May 18 2000 Jef Poskanzer <jef@mail.acme.com>
+* Thu May 18 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.18
 
-* Fri Mar 17 2000 Jef Poskanzer <jef@mail.acme.com>
+* Fri Mar 17 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.17
 
-* Mon Feb 28 2000 Jef Poskanzer <jef@mail.acme.com>
+* Mon Feb 28 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.16
 
-* Thu Feb 03 2000 Jef Poskanzer <jef@mail.acme.com>
+* Thu Feb 03 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.15
 
-* Thu Jan 21 2000 Jef Poskanzer <jef@mail.acme.com>
+* Thu Jan 21 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.14
 
-* Thu Jan  6 2000 Jef Poskanzer <jef@mail.acme.com>
+* Thu Jan  6 2000 Jef Poskanzer <jef@acme.com>
   - Updated to 2.13
 
 * Mon Jan  3 2000 Bennett Todd <bet@rahul.net>

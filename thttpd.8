@@ -9,8 +9,6 @@ thttpd - tiny/turbo/throttling HTTP server
 .IR port ]
 .RB [ -d
 .IR dir ]
-.RB [ -dd
-.IR data_dir ]
 .RB [ -r | -nor ]
 .RB [ -s | -nos ]
 .RB [ -v | -nov ]
@@ -29,10 +27,6 @@ thttpd - tiny/turbo/throttling HTTP server
 .IR pidfile ]
 .RB [ -T
 .IR charset ]
-.RB [ -P
-.IR P3P ]
-.RB [ -M
-.IR maxage ]
 .RB [ -V ]
 .RB [ -D ]
 .SH DESCRIPTION
@@ -72,15 +66,6 @@ See below for details.
 The config-file option names for this flag are "chroot" and "nochroot",
 and the config.h option is ALWAYS_CHROOT.
 .TP
-.B -dd
-Specifies a directory to chdir() to after chrooting.
-If you're not chrooting, you might as well do a single chdir() with
-the -d flag.
-If you are chrooting, this lets you put the web files in a subdirectory
-of the chroot tree, instead of in the top level mixed in with the
-chroot files.
-The config-file option name for this flag is "data_dir".
-.TP
 .B -nos
 Don't do explicit symbolic link checking.
 Normally, thttpd explicitly expands any symbolic links in filenames,
@@ -90,7 +75,7 @@ the -nos flag, however this is not recommended.
 Note, though, that if you are using the chroot option, the symlink
 checking is unnecessary and is turned off, so the safe way to save
 those CPU cycles is to use chroot.
-The config-file option names for this flag are "symlinkcheck" and "nosymlinkcheck".
+The config-file option names for this flag are "symlink" and "nosymlink".
 .TP
 .B -v
 Do el-cheapo virtual hosting.
@@ -153,24 +138,9 @@ The config-file option name for this flag is "pidfile".
 .TP
 .B -T
 Specifies the character set to use with text MIME types.
-The default is UTF-8.
+The default is iso-8859-1.
 The config-file option name for this flag is "charset",
 and the config.h option is DEFAULT_CHARSET.
-.TP
-.B -P
-Specifies a P3P server privacy header to be returned with all responses.
-See http://www.w3.org/P3P/ for details.
-Thttpd doesn't do anything at all with the string except put it in the
-P3P: response header.
-The config-file option name for this flag is "p3p".
-.TP
-.B -M
-Specifies the number of seconds to be used in a "Cache-Control: max-age"
-header to be returned with all responses.
-An equivalent "Expires" header is also generated.
-The default is no Cache-Control or Expires headers,
-which is just fine for most sites.
-The config-file option name for this flag is "max_age".
 .TP
 .B -V
 Shows the current version info.
@@ -217,18 +187,6 @@ scripts are available.
 If you have CGI disabled, or if you make a policy that all CGI programs
 must be written in a compiled language such as C and statically linked,
 then you probably don't have to do any setup at all.
-.PP
-However, one thing you should do is tell syslogd about the chroot tree,
-so that thttpd can still generate syslog messages.
-Check your system's syslodg man page for how to do this.
-In FreeBSD you would put something like this in /etc/rc.conf:
-.nf
-    syslogd_flags="-l /usr/local/www/data/dev/log"
-.fi
-Substitute in your own chroot tree's pathname, of course.
-Don't worry about creating the log socket, syslogd wants to do that itself.
-(You may need to create the dev directory.)
-In Linux the flag is -a instead of -l, and there may be other differences.
 .PP
 Relevant config.h option: ALWAYS_CHROOT.
 .SH "CGI"
@@ -277,7 +235,10 @@ Relevant config.h option: AUTH_FILE
 .SH "THROTTLING"
 .PP
 The throttle file lets you set maximum byte rates on URLs or URL groups.
-You can optionally set a minimum rate too.
+There is no provision for setting a maximum request rate throttle,
+because throttling a request uses as much cpu as handling it, so
+there would be no point.
+.PP
 The format of the throttle file is very simple.
 A # starts a comment, and the rest of the line is ignored.
 Blank lines are ignored.
@@ -286,17 +247,15 @@ The pattern is a simple shell-style filename pattern, using ?/**/*, or
 multiple such patterns separated by |.
 .PP
 The numbers in the file are byte rates, specified in units of bytes per second.
-For comparison, a v.90 modem gives about 5000 B/s depending on compression,
-a double-B-channel ISDN line about 12800 B/s, and a T1 line is about
-150000 B/s.
-If you want to set a minimum rate as well, use number-number.
+For comparison, a v.32b/v.42b modem gives about 1500/2000 B/s
+depending on compression, a double-B-channel ISDN line about
+12800 B/s, and a T1 line is about 150000 B/s.
 .PP
 Example:
 .nf
   # throttle file for www.acme.com
 
-  **              2000-100000  # limit total web usage to 2/3 of our T1,
-                               # but never go below 2000 B/s
+  **              100000  # limit total web usage to 2/3 of our T1
   **.jpg|**.gif   50000   # limit images to 1/3 of our T1
   **.mpg          20000   # and movies to even less
   jef/**          20000   # jef's pages are too popular
@@ -309,29 +268,8 @@ has accounted for recently (via a rolling average).
 If a URL matches a pattern that has been exceeding its specified limit,
 then the data returned is actually slowed down, with
 pauses between each block.
-If that's not possible (e.g. for CGI programs) or if the bandwidth has gotten
-way larger than the limit, then the server returns a special code
-saying 'try again later'.
-.PP
-The minimum rates are implemented similarly.
-If too many people are trying to fetch something at the same time,
-throttling may slow down each connection so much that it's not really
-useable.
-Furthermore, all those slow connections clog up the server, using
-up file handles and connection slots.
-Setting a minimum rate says that past a certain point you should not
-even bother - the server returns the 'try again later" code and the
-connection isn't even started.
-.PP
-There is no provision for setting a maximum connections/second throttle,
-because throttling a request uses as much cpu as handling it, so
-there would be no point.
-There is also no provision for throttling the number of simultaneous
-connections on a per-URL basis.
-However you can control the overall number of connections for the whole
-server very simply, by setting the operating system's per-process file
-descriptor limit before starting thttpd.
-Be sure to set the hard limit, not the soft limit.
+If that's not possible (e.g. for CGI programs), then
+the server returns a special code saying 'try again later'.
 .SH "MULTIHOMING"
 .PP
 Multihoming means using one machine to serve multiple hostnames.
@@ -433,34 +371,34 @@ virtual host's web tree.
 thttpd will look first in the virtual host errors directory, and
 then in the server-wide errors directory, and if neither of those
 has an appropriate error file then it will generate the built-in error.
-.SH "NON-LOCAL REFERRERS"
+.SH "NON-LOCAL REFERERS"
 .PP
 Sometimes another site on the net will embed your image files in their
 HTML files, which basically means they're stealing your bandwidth.
-You can prevent them from doing this by using non-local referrer filtering.
-With this option, certain files can only be fetched via a local referrer.
+You can prevent them from doing this by using non-local referer filtering.
+With this option, certain files can only be fetched via a local referer.
 The files have to be referenced by a local web page.
 If a web page on some other site references the files, that fetch will
 be blocked.
 There are three config-file variables for this feature:
 .TP
 .B urlpat
-A wildcard pattern for the URLs that should require a local referrer.
+A wildcard pattern for the URLs that should require a local referer.
 This is typically just image files, sound files, and so on.
 For example:
 .nf
   urlpat=**.jpg|**.gif|**.au|**.wav
 .fi
-For most sites, that one setting is all you need to enable referrer filtering.
+For most sites, that one setting is all you need to enable referer filtering.
 .TP
-.B noemptyreferrers
-By default, requests with no referrer at all, or a null referrer, or a
-referrer with no apparent hostname, are allowed.
+.B noemptyreferers
+By default, requests with no referer at all, or a null referer, or a
+referer with no apparent hostname, are allowed.
 With this variable set, such requests are disallowed.
 .TP
 .B localpat
 A wildcard pattern that specifies the local host or hosts.
-This is used to determine if the host in the referrer is local or not.
+This is used to determine if the host in the referer is local or not.
 If not specified it defaults to the actual local hostname.
 .SH SYMLINKS
 .PP
@@ -521,7 +459,7 @@ all fairly similar to CERN Common Log Format:
 .nf
   Aug  6 15:40:34 acme thttpd[583]: 165.113.207.103 - - "GET /file" 200 357
   Aug  6 15:40:43 acme thttpd[583]: 165.113.207.103 - - "HEAD /file" 200 0
-  Aug  6 15:41:16 acme thttpd[583]: referrer http://www.acme.com/ -> /dir
+  Aug  6 15:41:16 acme thttpd[583]: referer http://www.acme.com/ -> /dir
   Aug  6 15:41:16 acme thttpd[583]: user-agent Mozilla/1.1N
 .fi
 The package includes a script for translating these log entries info
@@ -550,17 +488,20 @@ In addition, the network socket it uses to accept new connections gets
 closed immediately, which means a fresh thttpd can be started up
 immediately.
 .TP
-.B USR2
-This signal tells thttpd to generate the statistics syslog messages
-immediately, instead of waiting for the regular hourly update.
-.TP
 .B HUP
 This signal tells thttpd to close and re-open its (non-syslog) log file,
-for instance if you rotated the logs and want it to start using the
+for instance if you rotated the logs and want thttpd to start using the
 new one.
-This is a little tricky to set up correctly, for instance if you are using
-chroot() then the log file must be within the chroot tree, but it's
-definitely doable.
+However, this feature isn't actually that useful at the moment.
+The problem is that thttpd will generally be started as root, so that
+it can bind to port 80; then it gives up the root uid as soon as it can,
+for security reasons.
+But if you later send it a HUP, it will try to re-open the log file
+without root access and will generally fail.
+Also, if you're running inside a chroot tree, as you should be,
+the log file won't even be accessible.
+Currently the best alternative for log rotation is to send a USR1 signal,
+shutting down thttpd altogether, and then restart it.
 .SH "SEE ALSO"
 redirect(8), ssi(8), makeweb(1), htpasswd(1), syslogtocern(8), weblog_parse(1), http_get(1)
 .SH THANKS
@@ -572,7 +513,7 @@ Catalin Ionescu.
 Special thanks to Craig Leres for substantial debugging and development,
 and for not complaining about my coding style very much.
 .SH AUTHOR
-Copyright © 1995,1998,1999,2000 by Jef Poskanzer <jef@mail.acme.com>.
+Copyright © 1995,1998,1999,2000 by Jef Poskanzer <jef@acme.com>.
 All rights reserved.
 .\" Redistribution and use in source and binary forms, with or without
 .\" modification, are permitted provided that the following conditions

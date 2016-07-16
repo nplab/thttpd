@@ -16,17 +16,14 @@
 #include <time.h>
 #include <unistd.h>
 
-#ifdef HAVE_CRYPT_H
-#include <crypt.h>
-#endif
+extern char *crypt(const char *key, const char *setting);
 
 #define LF 10
 #define CR 13
 
 #define MAX_STRING_LEN 256
 
-int tfd;
-char temp_template[] = "/tmp/htp.XXXXXX";
+char *tn;
 
 void interrupted(int);
 
@@ -51,7 +48,7 @@ static void getword(char *word, char *line, char stop) {
     while((line[y++] = line[x++]));
 }
 
-static int my_getline(char *s, int n, FILE *f) {
+static int getline(char *s, int n, FILE *f) {
     register int i=0;
 
     while(1) {
@@ -127,8 +124,8 @@ add_password( char* user, FILE* f )
 	if ( strcmp( pw, (char*) getpass( "Re-type new password:" ) ) != 0 )
 	    {
 	    (void) fprintf( stderr, "They don't match, sorry.\n" );
-	    if ( tfd != -1 )
-		unlink( temp_template );
+	    if ( tn )
+		unlink( tn );
 	    exit( 1 );
 	    }
 	}
@@ -146,7 +143,7 @@ static void usage(void) {
 
 void interrupted(int signo) {
     fprintf(stderr,"Interrupted.\n");
-    if(tfd != -1) unlink(temp_template);
+    if(tn) unlink(tn);
     exit(1);
 }
 
@@ -159,7 +156,7 @@ int main(int argc, char *argv[]) {
     char command[MAX_STRING_LEN];
     int found;
 
-    tfd = -1;
+    tn = NULL;
     signal(SIGINT,(void (*)(int))interrupted);
     if(argc == 4) {
         if(strcmp(argv[1],"-c"))
@@ -176,8 +173,8 @@ int main(int argc, char *argv[]) {
         exit(0);
     } else if(argc != 3) usage();
 
-    tfd = mkstemp(temp_template);
-    if(!(tfp = fdopen(tfd,"w"))) {
+    tn = tmpnam(NULL);
+    if(!(tfp = fopen(tn,"w"))) {
         fprintf(stderr,"Could not open temp file.\n");
         exit(1);
     }
@@ -191,7 +188,7 @@ int main(int argc, char *argv[]) {
     strcpy(user,argv[2]);
 
     found = 0;
-    while(!(my_getline(line,MAX_STRING_LEN,f))) {
+    while(!(getline(line,MAX_STRING_LEN,f))) {
         if(found || (line[0] == '#') || (!line[0])) {
             putline(tfp,line);
             continue;
@@ -214,8 +211,8 @@ int main(int argc, char *argv[]) {
     }
     fclose(f);
     fclose(tfp);
-    sprintf(command,"cp %s %s",temp_template,argv[1]);
+    sprintf(command,"cp %s %s",tn,argv[1]);
     system(command);
-    unlink(temp_template);
+    unlink(tn);
     exit(0);
 }

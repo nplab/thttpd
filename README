@@ -1,5 +1,5 @@
              thttpd - tiny/turbo/throttling HTTP server
-                    version 2.27 of 19Oct2015
+                    version 2.21b of 23apr2001
 
 thttpd is a simple, small, portable, fast, and secure HTTP server.
 
@@ -25,7 +25,7 @@ no other server currently has.
 See the manual entry for more details.  See the INSTALL file for
 configuration and installation instructions.  Check the web page
 (http://www.acme.com/software/thttpd/) for updates, or add yourself to
-the mailing list by sending a "subscribe" to thttpd-announce-request@mail.acme.com.
+the mailing list by sending a "subscribe" to thttpd-announce-request@acme.com.
 
 Comments to:
-    Jef Poskanzer  jef@mail.acme.com  http://www.acme.com/jef/
+    Jef Poskanzer  jef@acme.com  http://www.acme.com/jef/

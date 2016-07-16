@@ -1,10 +1,8 @@
 - - - - - - - - - - high priority - - - - - - - - - -
 
-IPv6 not working right.
-
-Problem with ACME News downloads.  PATH_INFO interferes with the authorization.
-
 Why is the client's IP address showing up in paths?
+
+Add option to syslog to a named pipe, for use in chroot trees.
 
 Fetches with numeric IP addresses and no Host: header are screwing up the
 vhost code?
@@ -22,8 +20,21 @@ Add comment on INDEX_NAMES that it should be simple filenames only.
 The error page generated for non-local referers should include the
 original URL as an active link.
 
+Does the initgroups() call work?  Or does it need to be moved to
+before the chroot()?
+
 Make open in mmc.c use O_NONBLOCK flag, to prevent DOS attack via
 a named pipe?
+
+Sites that clog with lots of TCP connections in CLOSING (not CLOSE_WAIT).
+Related to throttling, and timers?
+
+On A SIGUSR1, thttpd sometimes gives 'fdwatch - Bad file descriptor'
+instead of the usual exit message.  Looks like we have to do any
+closes in the main loop, and only set flags in the signal routines.
+And once we got a CPU-bound loop.
+
+Switch all signal handling to use sigaction.
 
 - - - - - - - - - - later - - - - - - - - - -
 
@@ -40,6 +51,12 @@ Add TCP_NODELAY, but after CGIs get spawned.
 Add stat cache?  1 minute expiry?
 
 Ifdef the un-close-on-exec CGI thing for Linux only.
+
+Try using shutdown(2) in lingering close.
+
+Check whether phf can still syslog from within chroot (probably not).
+
+Can we remove the "if ( errno == EINTR )" check on the select()?
 
 Add keep-alives, via a new state in thttpd.c.
 
@@ -74,7 +91,7 @@ Release process:
   - do a tdiff and update the local installation
   - do an rcstreeinfo, and check in all files
   - make tar
-  - mv it to ..
-  - update version number in ../thttpd.html
+  - mv it to web
+  - update version number in web/thttpd.html
   - update ~acmeweb/updates.html
   - mail announcement to thttpd-announce

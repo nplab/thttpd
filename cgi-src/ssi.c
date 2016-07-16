@@ -1,6 +1,6 @@
 /* ssi - server-side-includes CGI program
 **
-** Copyright © 1995 by Jef Poskanzer <jef@mail.acme.com>.
+** Copyright © 1995 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -219,7 +219,7 @@ check_filename( char* filename )
     char* cp;
     char* dirname;
     char* authname;
-    struct stat sb2;
+    struct stat sb;
     int r;
 
     if ( ! inited )
@@ -263,7 +263,7 @@ check_filename( char* filename )
     if ( authname == (char*) 0 )
 	return 0;	/* out of memory */
     (void) sprintf( authname, "%s/%s", dirname, AUTH_FILE );
-    r = stat( authname, &sb2 );
+    r = stat( authname, &sb );
     free( dirname );
     free( authname );
     if ( r == 0 )
@@ -724,7 +724,10 @@ main( int argc, char** argv )
     /* Append the PATH_INFO, if any, to get the full URL. */
     path_info = getenv( "PATH_INFO" );
     if ( path_info == (char*) 0 )
-	path_info = "";
+	{
+	internal_error( "Couldn't get PATH_INFO environment variable." );
+	exit( 1 );
+	}
     url = (char*) malloc( strlen( script_name ) + strlen( path_info ) + 1 );
     if ( url == (char*) 0 )
 	{

@@ -1,19 +1,24 @@
 #!/bin/sh
 #
-# thttpd-rotate - nightly script to rotate thttpd's log files on FreeBSD
+# thttpd-rotate - nightly script to rotate thttpd's log files on FreeBSD 3.x
 #
 # This goes in /etc/periodic/daily.  It rotates the log files and then
-# tells thttpd to re-open its log file.
+# tells thttpd to shutdown cleanly.  The wrapper script will then start
+# up a new copy, writing to the new log file.
 
-cd /usr/local/www/chroot/logs
-rm -f thttpd_log.7.gz
-mv thttpd_log.6.gz thttpd_log.7.gz
-mv thttpd_log.5.gz thttpd_log.6.gz
-mv thttpd_log.4.gz thttpd_log.5.gz
-mv thttpd_log.3.gz thttpd_log.4.gz
-mv thttpd_log.2.gz thttpd_log.3.gz
-mv thttpd_log.1.gz thttpd_log.2.gz
+cd /usr/local/www/logs
+rm -f thttpd_log.7
+mv thttpd_log.6 thttpd_log.7
+mv thttpd_log.5 thttpd_log.6
+mv thttpd_log.4 thttpd_log.5
+mv thttpd_log.3 thttpd_log.4
+mv thttpd_log.2 thttpd_log.3
+mv thttpd_log.1 thttpd_log.2
 mv thttpd_log thttpd_log.1
-kill -HUP `cat /var/run/thttpd.pid`
-sleep 1
-gzip -f thttpd_log.1
+pid1=`cat /var/run/thttpd.pid`
+kill -USR1 "$pid1"
+sleep 60
+pid2=`cat /var/run/thttpd.pid`
+if [ "$pid2" -eq "$pid1" ] ; then
+    kill -KILL "$pid1"
+fi
