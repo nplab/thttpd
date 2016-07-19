@@ -1,6 +1,6 @@
 /* libhttpd.h - defines for libhttpd
 **
-** Copyright © 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
+** Copyright ï¿½ 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,16 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#ifdef HAVE_NETINET_SCTP_H
+#include <netinet/sctp.h>
+#endif
 #include <arpa/inet.h>
 #include <netdb.h>
+
+#ifdef HAVE_NETINET_SCTP_H
+#define USE_SCTP
+#endif
+
 
 
 /* A few convenient defines. */
@@ -95,6 +103,9 @@ typedef struct {
     char* cwd;
     size_t cwd_len;
     int listen4_fd, listen6_fd;
+#ifdef USE_SCTP
+    int listensctp_fd;
+#endif
     int no_log;
     FILE* logfp;
     int no_symlink;
@@ -184,6 +195,13 @@ typedef struct {
     int should_linger;	/* 0/1 */
     struct stat sb;
     int conn_fd;
+#ifdef USE_SCTP
+    int is_sctp;
+    unsigned int no_i_streams;
+    unsigned int no_o_streams;
+    size_t send_at_once_limit;
+    int use_eeor;
+#endif
     int file_fd;
     char* file_address;
 #ifdef USE_LAYOUT
@@ -275,7 +293,8 @@ extern void httpd_unlisten( httpd_server* hs );
 ** The caller is also responsible for setting initialized to zero before the
 ** first call using each different httpd_conn.
 */
-extern int httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc );
+extern int httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp );
+//extern int httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc );
 #define GC_OK      0
 #define GC_NO_MORE 1
 #define GC_ABORT   2

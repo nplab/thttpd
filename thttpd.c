@@ -1,6 +1,6 @@
 /* thttpd.c - tiny/turbo/throttling HTTP server
 **
-** Copyright © 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
+** Copyright ï¿½ 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -210,6 +210,9 @@ static time_t start_time, stats_time;
 static unsigned long stats_requests;
 static unsigned long stats_connections;
 static unsigned long stats_connaborted;
+#ifdef USE_SCTP
+long stats_associations;
+#endif
 static int stats_simultaneous;
 #ifdef HAVE_INT64T
 static int64_t stats_resp_bytes;	/* HTTP headers + error responses */
@@ -252,7 +255,7 @@ static void read_cgiclifile( char* cgiclifile );
 #endif /* EXECUTE_CGICLI */
 static void read_throttlefile( char* throttlefile, int* numthrottlesP );
 static void shut_down( void );
-static int handle_newconnect( struct timeval* tvP, int listen_fd );
+static int handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp );
 static void handle_buf_read( connecttab* c, struct timeval* tvP );
 static void handle_read( connecttab* c, struct timeval* tvP );
 static void handle_send( connecttab* c, struct timeval* tvP );
@@ -819,7 +822,7 @@ main( int argc, char** argv )
 		}
 	    if ( logfile[0] != '/' )
 		{
-		vszWarn[i++] = 
+		vszWarn[i++] =
 		"logfile is not an absolute path, you may not be able to re-open it";
 		}
 	    if ( do_chroot != 0 )
@@ -1025,6 +1028,9 @@ main( int argc, char** argv )
     stats_requests     = 0;
     stats_connections  = 0;
     stats_connaborted  = 0;
+    #ifdef USE_SCTP
+        stats_associations = 0;
+    #endif
     stats_simultaneous = 0;
     stats_resp_bytes   = 0;
     stats_body_bytes   = 0;
@@ -1115,6 +1121,11 @@ main( int argc, char** argv )
 	if ( hs->listen6_fd != -1 )
 	    fdwatch_add_fd( hs->listen6_fd, (void*) 0, FDW_READ );
 	}
+#ifdef USE_SCTP
+    if ( hs->listensctp_fd != -1 )
+        fdwatch_add_fd( hs->listensctp_fd, (void*) 0, FDW_READ );
+#endif
+
 
     /* Main loop. */
     (void) gettimeofday( &tv, (struct timezone*) 0 );
@@ -1153,26 +1164,38 @@ main( int argc, char** argv )
 		}
 
 	    /* Is it a new connection? */
-	    if ( hs->listen6_fd != -1 && 
+	    if ( hs->listen6_fd != -1 &&
 		fdwatch_check_fd( hs->listen6_fd ) )
 		{
-		if ( handle_newconnect( &tv, hs->listen6_fd ) )
+		if ( handle_newconnect( &tv, hs->listen6_fd, 0 ) )
 		    /* Go around the loop and do another fdwatch, rather than
 		    ** dropping through and processing existing connections.
 		    ** New connections always get priority.
 		    */
 		    continue;
 		}
-	    if ( hs->listen4_fd != -1 && 
+	    if ( hs->listen4_fd != -1 &&
 		fdwatch_check_fd( hs->listen4_fd ) )
 		{
-		if ( handle_newconnect( &tv, hs->listen4_fd ) )
+            if ( handle_newconnect( &tv, hs->listen4_fd, 0 ) )
+            /* Go around the loop and do another fdwatch, rather than
+            ** dropping through and processing existing connections.
+            ** New connections always get priority.
+            */
+            continue;
+        }
+#ifdef USE_SCTP
+        if ( hs != (httpd_server*) 0 && hs->listensctp_fd != -1 &&
+             fdwatch_check_fd( hs->listensctp_fd ) )
+            {
+            if ( handle_newconnect( &tv, hs->listensctp_fd, 1 ) )
 		    /* Go around the loop and do another fdwatch, rather than
 		    ** dropping through and processing existing connections.
 		    ** New connections always get priority.
 		    */
 		    continue;
 		}
+#endif
 
 	    /* Find the connections that need servicing. */
 	    for ( ridx = 0; ridx < num_ready; ++ridx )
@@ -1239,6 +1262,11 @@ main( int argc, char** argv )
 		    if ( hs->listen6_fd != -1 &&
 			fdwatch_is_fd ( hs->listen6_fd ) )
 			fdwatch_del_fd( hs->listen6_fd );
+#ifdef USE_SCTP
+            if ( hs->listensctp_fd != -1 )
+            fdwatch_del_fd( hs->listensctp_fd );
+#endif
+
 
 		    /* disable keep alive (to speed up shutdown) */
 		    hs->do_keepalive_conns = 0;
@@ -2222,8 +2250,11 @@ read_config( char* filename )
 static void
 value_required( char* name, char* value )
     {
+
+
     if ( value == (char*) 0 )
 	{
+        printf(">>>>>BOOOOOM\n");
 	(void) fprintf(
 	    stderr, "%s: value required for %s option\n", argv0, name );
 	exit( 63 );
@@ -2314,7 +2345,7 @@ lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockad
 	}
 
     if ( aiv4 == (struct addrinfo*) 0 )
-	*gotv4P = 0; 
+	*gotv4P = 0;
     else
 	{
 	if ( sa4_len < aiv4->ai_addrlen )
@@ -2329,7 +2360,7 @@ lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockad
 	*gotv4P = 1;
 	}
     if ( aiv6 == (struct addrinfo*) 0 )
-	*gotv6P = 0; 
+	*gotv6P = 0;
     else
 	{
 	if ( sa6_len < aiv6->ai_addrlen )
@@ -2666,6 +2697,11 @@ shut_down( void )
 	    if ( hs->listen6_fd != -1 &&
 		fdwatch_is_fd ( hs->listen6_fd ) )
 		fdwatch_del_fd( hs->listen6_fd );
+#ifdef USE_SCTP
+    	if ( hs->listensctp_fd != -1 )
+	    fdwatch_del_fd( hs->listensctp_fd );
+#endif
+
 	    fdwatch_sync();
 	    httpd_terminate( hs );
 	    hs = (httpd_server*) 0;
@@ -2696,7 +2732,7 @@ shut_down( void )
 ** It's better to not call tmr_run() here.
 */
 static int
-handle_newconnect( struct timeval* tvP, int listen_fd )
+handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
     {
     int numconnects0 = numconnects;
     connecttab* c;
@@ -2781,7 +2817,7 @@ handle_newconnect( struct timeval* tvP, int listen_fd )
 	    }
 
 	/* Get the connection. */
-	switch ( httpd_get_conn( hs, listen_fd, c->hc ) )
+	switch ( httpd_get_conn( hs, listen_fd, c->hc, is_sctp ) )
 	    {
 	    case GC_OK:
 		break;
@@ -2855,7 +2891,15 @@ handle_newconnect( struct timeval* tvP, int listen_fd )
 
 	fdwatch_add_fd( c->hc->conn_fd, c, FDW_READ );
 
+#ifdef USE_SCTP
+	if ( c->hc->is_sctp)
+	    ++stats_associations;
+	else
+	    ++stats_connections;
+#else
 	++stats_connections;
+#endif
+
 	if ( numconnects > stats_simultaneous )
 	    stats_simultaneous = numconnects;
 
@@ -3145,6 +3189,19 @@ handle_send( connecttab* c, struct timeval* tvP )
     int iovidx = 0;
     struct iovec iv[5];
 #endif
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    struct iovec iv[2];
+#ifdef USE_SCTP
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
+    struct sctp_sndinfo *sndinfo;
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+#endif
+#endif
+
 
     /* Are we done?  We don't check for headers because here */
     /* we always send non empty files. */
@@ -3165,13 +3222,21 @@ handle_send( connecttab* c, struct timeval* tvP )
 	}
 
     max_bytes = (int) ( c->limit / 2 );
+#ifdef USE_SCTP
+    if ( hc->is_sctp )
+	{
+	if ( max_bytes > hc->send_at_once_limit )
+	    max_bytes = hc->send_at_once_limit;
+	}
+#endif
+
 
 #ifndef USE_LAYOUT
 
-    /* Do we need to write the headers first? */
+    /* Do we need to write the headers first? /
     if ( hc->responselen <= 0 )
 	{
-	/* No, just write the file. */
+	/* No, just write the file. /
 	bytes_to_write = (int)
 		MIN( c->bytes_to_send - c->bytes_sent, max_bytes );
 	if ( hc->file_fd != EOF )
@@ -3180,12 +3245,70 @@ handle_send( connecttab* c, struct timeval* tvP )
 	else
 	    sz = write( hc->conn_fd, &(hc->file_address[c->bytes_sent]),
 		bytes_to_write );
-	}
+	*/
+    iv[0].iov_base = hc->response;
+    iv[0].iov_len = hc->responselen;
+    iv[1].iov_base = &(hc->file_address[c->bytes_sent]);
+    iv[1].iov_len = MIN( c->bytes_to_send - c->bytes_sent, max_bytes );
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = iv;
+    msg.msg_iovlen = 2;
+#ifdef USE_SCTP
+    if ( hc->is_sctp && hc->use_eeor )
+	{
+	cmsg = (struct cmsghdr *)cmsgbuf;
+	cmsg->cmsg_level = IPPROTO_SCTP;
+#ifdef SCTP_SNDINFO
+	cmsg->cmsg_type = SCTP_SNDINFO;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
+	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
+	sndinfo->snd_sid = 0;
+	sndinfo->snd_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+	if ( c->bytes_to_send - c->bytes_sent <= max_bytes )
+	    {
+	    sndinfo->snd_flags |= SCTP_EOR;
+#ifdef SCTP_SACK_IMMEDIATELY
+	    sndinfo->snd_flags |= SCTP_SACK_IMMEDIATELY;
+#endif
+
+	    }
+#endif
+	sndinfo->snd_ppid = htonl(0);
+	sndinfo->snd_context = 0;
+	sndinfo->snd_assoc_id = 0;
+	msg.msg_control = cmsg;
+	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
+#else
+	cmsg->cmsg_type = SCTP_SNDRCV;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
+	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
+	sndrcvinfo->sinfo_stream = 0;
+	sndrcvinfo->sinfo_flags = 0;
+#ifdef SCTP_EXPLICIT_EOR
+	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
+	    {
+	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
+#ifdef SCTP_SACK_IMMEDIATELY
+	    sndrcvinfo->sinfo_flags |= SCTP_SACK_IMMEDIATELY;
+#endif
+	    }
+#endif
+	sndrcvinfo->sinfo_ppid = htonl(0);
+	sndrcvinfo->sinfo_context = 0;
+	sndrcvinfo->sinfo_timetolive = 0;
+	sndrcvinfo->sinfo_assoc_id = 0;
+	msg.msg_control = cmsg;
+	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
+#endif
+    }
     else
 	{
 	/* Yes.  We'll combine headers and file into a single writev(),
 	** hoping that this generates a single packet.
 	*/
+    // abschuss start
 	if ( hc->file_fd != EOF )
 	    {
 	    /* send header (always in RAM) */
@@ -3207,16 +3330,19 @@ handle_send( connecttab* c, struct timeval* tvP )
 	    }
 	else
 	    {
-	    struct iovec iv[2];
-
-	    iv[0].iov_base = hc->response;
-	    iv[0].iov_len = (size_t) hc->responselen;
-	    iv[1].iov_base = &(hc->file_address[c->bytes_sent]);
-	    iv[1].iov_len = (size_t)
-		MIN( c->bytes_to_send - c->bytes_sent, max_bytes );
-	    sz = writev( hc->conn_fd, iv, 2 );
+    // abschuss ende
+        msg.msg_control = NULL;
+        msg.msg_controllen = 0;
 	    }
 	}
+
+#else
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+#endif
+    msg.msg_flags = 0;
+    sz = sendmsg( hc->conn_fd, &msg, 0 );
+
 #else
     /* USE_LAYOUT */
 
@@ -3320,7 +3446,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 	if ( iovidx == 1 )
 	    /* Yes, then use write */
 	    sz = write( hc->conn_fd, iv[0].iov_base, iv[0].iov_len );
-	else 
+	else
 	    /* No.  We'll combine headers, layout and file into
 	    ** a single writev(), hoping that this generates a single packet.
 	    */
@@ -3692,7 +3818,7 @@ handle_linger( connecttab* c, struct timeval* tvP )
     }
 
 
-static int 
+static int
 in_check_throttles( connecttab* c, int tnum )
     {
     long l;
@@ -3775,7 +3901,7 @@ clear_throttles( connecttab* c, struct timeval* tvP )
 
 #ifdef USE_IPTHROTTLE
     if ( c->tnums[0] < numurithrottles ) /* keep alive for ipthrottles */
-	c->tnums[0] = -1; 
+	c->tnums[0] = -1;
 #endif /* USE_IPTHROTTLE */
 
     /* we are done, set counter to zero */
@@ -3852,7 +3978,7 @@ update_throttles( ClientData client_data, struct timeval* nowP )
 
 #ifdef USE_IPTHROTTLE
 
-static int 
+static int
 subnetcmp( const void *p1, const void *p2 )
     {
     struct in_addr i = ((subnet_t *)p1)->net;
@@ -4569,4 +4695,8 @@ thttpd_logstats( long secs )
     stats_resp_bytes   = 0;
     stats_body_bytes   = 0;
     stats_ovfconnects  = 0;
+#ifdef USE_SCTP
+    stats_associations = 0;
+#endif
+
     }
