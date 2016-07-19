@@ -79,7 +79,7 @@ fi
 AC_MSG_CHECKING(for __progname)
 AC_CACHE_VAL(ac_cv_extern__progname,
     AC_TRY_LINK([],
-	[extern char *__progname; 
+	[extern char *__progname;
 	puts(__progname)],
 	ac_cv_extern__progname=yes,
 	ac_cv_extern__progname=no))
@@ -87,11 +87,11 @@ if test $ac_cv_extern__progname = yes ; then
 	AC_DEFINE(HAVE__PROGNAME)
 	AC_MSG_RESULT(yes)
 else
-	AC_MSG_RESULT(no)   
+	AC_MSG_RESULT(no)
 fi
 
 AC_CHECK_HEADERS(fcntl.h grp.h memory.h paths.h osreldate.h)
-AC_CHECK_HEADERS(sys/event.h sys/epoll.h sys/devpoll.h poll.h sys/poll.h)
+AC_CHECK_HEADERS(sys/event.h sys/epoll.h sys/devpoll.h poll.h sys/poll.h netinet/sctp.h)
 AC_HEADER_TIME
 AC_HEADER_DIRENT
 
@@ -112,10 +112,10 @@ V_NETLIBS=""
 AC_CHECK_FUNC(gethostbyname, ,
     # Some OSes (eg. Solaris) place it in libnsl:
     AC_LBL_CHECK_LIB(nsl, gethostbyname,
-	V_NETLIBS="-lnsl $V_NETLIBS", 
+	V_NETLIBS="-lnsl $V_NETLIBS",
 	# Some strange OSes (SINIX) have it in libsocket:
 	AC_LBL_CHECK_LIB(socket, gethostbyname,
-	    V_NETLIBS="-lsocket $V_NETLIBS", 
+	    V_NETLIBS="-lsocket $V_NETLIBS",
 	    # Unfortunately libsocket sometimes depends on libnsl.
 	    # AC_CHECK_LIB's API is essentially broken so the
 	    # following ugliness is necessary:

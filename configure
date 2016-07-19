@@ -962,7 +962,7 @@ else
 #include "confdefs.h"
 
 int main() {
-extern char *__progname; 
+extern char *__progname;
 	puts(__progname)
 ; return 0; }
 EOF
@@ -985,7 +985,7 @@ EOF
 
 	echo "$ac_t""yes" 1>&6
 else
-	echo "$ac_t""no" 1>&6   
+	echo "$ac_t""no" 1>&6
 fi
 
 echo $ac_n "checking how to run the C preprocessor""... $ac_c" 1>&6
@@ -1108,7 +1108,7 @@ else
 fi
 done
 
-for ac_hdr in sys/event.h sys/epoll.h sys/devpoll.h poll.h sys/poll.h
+for ac_hdr in sys/event.h sys/epoll.h sys/devpoll.h poll.h sys/poll.h netinet/sctp.h
 do
 ac_safe=`echo "$ac_hdr" | sed 'y%./+-%__p_%'`
 echo $ac_n "checking for $ac_hdr""... $ac_c" 1>&6
