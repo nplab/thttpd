@@ -42,6 +42,7 @@
 #ifdef HAVE_NETINET_SCTP_H
 #define USE_SCTP
 #endif
+#define USE_IPV6
 
 
 

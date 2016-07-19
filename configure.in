@@ -44,6 +44,7 @@ if test "$GCC" = yes ; then
 	fi
 fi
 if test -f .devel ; then
+	V_CCOPT="-O0"
 	V_CCOPT="-g $V_CCOPT -Wall -Wmissing-prototypes -Wstrict-prototypes"
 fi
 
@@ -139,6 +140,7 @@ AC_CHECK_FUNC(hstrerror, ,
 AC_FUNC_MMAP
 AC_REPLACE_FUNCS(strerror)
 AC_CHECK_FUNCS(waitpid vsnprintf daemon setsid setlogin getaddrinfo getnameinfo gai_strerror sigset)
+AC_CHECK_FUNC(sctp_bindx, , AC_CHECK_LIB(sctp, sctp_bindx))
 
 AC_CHECK_FUNCS(kqueue epoll_ctl)
 AC_CHECK_HEADER(sys/devpoll.h,
@@ -147,6 +149,7 @@ case "$target_os" in
 *bsd*|*darwin*)
 	AC_CHECK_FUNCS(poll select)
 	AC_CHECK_FUNC(sendfile, [AC_DEFINE(HAVE_BSD_SENDFILE)])
+	AC_DEFINE(HAVE_SA_LEN, 1, [Define this if your stack has sa_len in sockaddr struct.])
 	;;
 *linux*)
 	AC_CHECK_FUNCS(poll select)

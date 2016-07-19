@@ -2384,12 +2384,10 @@ lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockad
     *gotv6P = 0;
 
     memset( sa4P, 0, sa4_len );
-#ifdef notdef
     /* We don't really need to set sa_len. */
 #ifdef HAVE_SA_LEN
     sa4P->sa_len = sa4_len;
 #endif /* HAVE_SA_LEN */
-#endif
     sa4P->sa.sa_family = AF_INET;
     if ( hostname == (char*) 0 )
 	sa4P->sa_in.sin_addr.s_addr = htonl( INADDR_ANY );
