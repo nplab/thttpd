@@ -3194,9 +3194,11 @@ handle_send( connecttab* c, struct timeval* tvP )
 #ifdef SCTP_SNDINFO
     char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
     struct sctp_sndinfo *sndinfo;
+    memset(cmsgbuf, 0, CMSG_SPACE(sizeof(struct sctp_sndinfo)));
 #else
     char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
     struct sctp_sndrcvinfo *sndrcvinfo;
+    memset(cmsgbuf, 0, CMSG_SPACE(sizeof(struct sctp_sndrcvinfo)));
 #endif
 #endif
 
@@ -3255,16 +3257,16 @@ handle_send( connecttab* c, struct timeval* tvP )
 	    sndinfo->snd_flags |= SCTP_EOR;
 #ifdef SCTP_SACK_IMMEDIATELY
 	    sndinfo->snd_flags |= SCTP_SACK_IMMEDIATELY;
-#endif
+#endif // SCTP_SACK_IMMEDIATELY
 
 	    }
-#endif
+#endif // SCTP_EXPLICIT_EOR
 	sndinfo->snd_ppid = htonl(0);
 	sndinfo->snd_context = 0;
 	sndinfo->snd_assoc_id = 0;
 	msg.msg_control = cmsg;
 	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
-#else
+#else // SCTP_SNDINFO
 	cmsg->cmsg_type = SCTP_SNDRCV;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
 	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
@@ -3276,16 +3278,16 @@ handle_send( connecttab* c, struct timeval* tvP )
 	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
 #ifdef SCTP_SACK_IMMEDIATELY
 	    sndrcvinfo->sinfo_flags |= SCTP_SACK_IMMEDIATELY;
-#endif
+#endif // SCTP_SACK_IMMEDIATELY
 	    }
-#endif
+#endif // SCTP_EXPLICIT_EOR
 	sndrcvinfo->sinfo_ppid = htonl(0);
 	sndrcvinfo->sinfo_context = 0;
 	sndrcvinfo->sinfo_timetolive = 0;
 	sndrcvinfo->sinfo_assoc_id = 0;
 	msg.msg_control = cmsg;
 	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
-#endif
+#endif // SCTP_SNDINFO
     }
     else
 	{

@@ -925,6 +925,9 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 #ifdef USE_IPV6
     int off;
 #endif
+#ifdef SCTP_RECVRCVINFO
+	int on;
+#endif
 #if defined(SCTP_ECN_SUPPORTED) || defined(SCTP_PR_SUPPORTED) || defined(SCTP_ASCONF_SUPPORTED) || defined(SCTP_AUTH_SUPPORTED) || defined(SCTP_RECONFIG_SUPPORTED) || defined(SCTP_NRSACK_SUPPORTED) || defined(SCTP_PKTDROP_SUPPORTED)
     struct sctp_assoc_value assoc_value;
 #endif
@@ -1061,6 +1064,18 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	     sizeof(assoc_value) ) < 0 )
 	{
 	syslog( LOG_CRIT, "setsockopt SCTP_PKTDROP_SUPPORTED - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+#endif
+#if defined(SCTP_RECVRCVINFO)
+    /* Disable the Packet Drop Report extension */
+	on = 1;
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_RECVRCVINFO, (char*) &on,
+		 sizeof(on) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_RECVRCVINFO - %m" );
 	(void) close( listen_fd );
 	return -1;
 	}
@@ -1437,7 +1452,7 @@ httpd_write_fully_sctp( httpd_conn* hc , const char * buf, size_t nbytes,
     {
     size_t nwritten;
     size_t nwrite;
-	
+
     nwritten = 0;
     while ( nwritten < nbytes )
 	{
