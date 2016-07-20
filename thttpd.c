@@ -3054,9 +3054,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 
     /* Are we done?  We don't check for headers because here */
     /* we always send non empty files. */
-    if ( c->bytes_sent >= c->bytes_to_send &&
-	( hc->layout == 0 ||
-	( hc->lheaderfile_len == 0 && hc->lfooterfile_len == 0 ) ) )
+    if ( c->bytes_sent >= c->bytes_to_send )
 	{
 	/* This reply is over and socket send buffer should be almost empty.
 	** Now we can safely start reading next HTTP/1.1 request without
