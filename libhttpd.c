@@ -294,13 +294,6 @@ static int my_snprintf( char* str, size_t size, const char* format, ... );
 #endif
 static size_t fmt_ulong10( char *psz, const unsigned long culNum );
 
-#ifdef USE_LAYOUT
-/* Layout external Vars, see thttpd.c for original declaration */
-extern char *lheaderfile, *lfooterfile;
-extern int lheaderfile_len, lfooterfile_len;
-extern char *lheaderfile_map, *lfooterfile_map;
-#endif /* USE_LAYOUT */
-
 #ifdef EXECUTE_CHILD
 
 static int reap_time;		/* interval between calls to do_reap() */
@@ -1963,17 +1956,6 @@ send_mime( httpd_conn* hc, int status, const char* title, int titlelen,
     hc->status = status;
     hc->bytes_to_send = length;
 
-#ifdef USE_LAYOUT
-    /* Header and footer are allowed only for
-    ** GET 200, NO: GET 304, HEAD, POST, etc.
-    */
-    if ( length > 0 && hc->layout )
-	{
-	/* use hdr + ftr only if body is not empty */
-	length += hc->lheaderfile_len + hc->lfooterfile_len;
-	}
-#endif /* USE_LAYOUT */
-
     if ( hc->mime_flag == 0 )
 	return;
 
@@ -2103,12 +2085,7 @@ send_mime( httpd_conn* hc, int status, const char* title, int titlelen,
 	    {
 	    if ( status == 416 )
 		{	/* infrequent error response */
-		unsigned long maxlength = (unsigned long)
-			( hc->sb.st_size
-#ifdef USE_LAYOUT
-			  + hc->lheaderfile_len + hc->lfooterfile_len
-#endif
-			);
+		unsigned long maxlength = (unsigned long) ( hc->sb.st_size );
 		/* length has already been added above */
 		add_responselen_M( hc, "Content-Range: bytes */", 23 );
 		add_responseULong10_M( hc, (unsigned long) maxlength );
@@ -3698,11 +3675,6 @@ httpd_request_reset0( httpd_conn* hc )
     hc->sb.st_mtime = 0;
     hc->file_fd = EOF;
     hc->file_address = (char*) 0;
-#ifdef USE_LAYOUT
-    hc->layout = 0;
-    hc->lheaderfile_len = 0;
-    hc->lfooterfile_len = 0;
-#endif
     return GC_OK;
 }
 
@@ -7246,8 +7218,6 @@ really_start_request( httpd_conn* hc, struct timeval* nowP,
 
     figure_mime( hc );
 
-#ifndef USE_LAYOUT
-
     if ( hc->got_range )
 	{
 	/* Check if range request is satisfiable */
@@ -7268,61 +7238,6 @@ really_start_request( httpd_conn* hc, struct timeval* nowP,
 	     hc->end_byte_loc >= hc->sb.st_size )
 	     hc->end_byte_loc  = hc->sb.st_size - 1;
 	}
-
-#else /* USE_LAYOUT */
-
-    /* For Layout, check if it is a non zero html file.
-    ** NOTE: use strncmp() because of charset appended to hc->type.
-    */
-    if ( ( lheaderfile != NULL || lfooterfile != NULL ) &&
-		hc->sb.st_size > 0 &&
-		strncmp( hc->type, MIME_TYPE_TEXT_HTML,
-			     SZLEN(MIME_TYPE_TEXT_HTML) ) == 0 )
-	{
-	hc->layout = 1; /* we need to modify output and Content-length */
-	hc->lheaderfile_len = lheaderfile_len;
-	hc->lfooterfile_len = lfooterfile_len;
-	}
-    else
-	{
-	hc->layout = 0; /* we don't need to modify output and Content-length */
-	hc->lheaderfile_len = 0;
-	hc->lfooterfile_len = 0;
-	}
-
-    /* Fill in end_byte_loc, if necessary. */
-    /* NOTE: don't change hc->lheaderfile_len and/or hc->lfooterfile_len */
-    /* because, later, we use them inside send_mime() */
-
-    if ( hc->got_range )
-	{
-	/* Check if range request is satisfiable */
-	if ( hc->init_byte_loc >= hc->sb.st_size +
-				hc->lheaderfile_len + hc->lfooterfile_len )
-	    {
-	    hc->got_range = 0;
-	    if ( hc->range_if == (time_t) -1 ||
-		 hc->range_if == hc->sb.st_mtime )
-		{
-		httpd_send_err( hc, 416, err416title, err416titlelen,
-			"", err416form, hc->encodedurl );
-		return -1;
-		}
-	    }
-
-	/* Avoid values of end_byte_loc inside header or footer range */
-	if ( hc->end_byte_loc == -1L ||
-	     hc->end_byte_loc >= hc->sb.st_size +
-				hc->lheaderfile_len )
-	    /* set it at the end of hdr + file + ftr */
-	    hc->end_byte_loc = hc->sb.st_size +
-				hc->lheaderfile_len + hc->lfooterfile_len - 1;
-	else
-	if ( hc->end_byte_loc < hc->lheaderfile_len - 1 )
-	    /* set it at the end of hdr */
-	    hc->end_byte_loc = hc->lheaderfile_len - 1;
-	}
-#endif /* USE_LAYOUT */
 
     /* Common case / fast path */
     if ( hc->method == METHOD_GET )

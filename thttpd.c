@@ -138,12 +138,6 @@ static long  MaxConnBytesLimit;
 static int   ConnSoRcvBuf;		/* default 0 = don't set it */
 static int   ConnSoSndBuf;		/* default 0 = don't set it */
 
-#ifdef USE_LAYOUT
-/* Layout Vars, global for now */
-char *lheaderfile, *lfooterfile;
-int   lheaderfile_len, lfooterfile_len;
-char *lheaderfile_map, *lfooterfile_map;
-#endif /* USE_LAYOUT */
 
 typedef struct {
     int conn_state;		/* connection state */
@@ -242,9 +236,6 @@ static void print_arg_msg( const int msg_type, const char *optname );
 #endif
 static void parse_args( int argc, char** argv );
 static void usage( void );
-#ifdef USE_LAYOUT
-static void* map_layoutfile( char* filename, int* pfilesize );
-#endif
 static void read_config( char* filename );
 static void value_required( char* name, char* value );
 static void no_value_required( char* name, char* value );
@@ -1715,61 +1706,6 @@ usage( void )
     }
 
 
-#ifdef USE_LAYOUT
-static void *
-map_layoutfile( char* filename, int* pfilesize )
-    {
-    struct stat sb = { 0 };
-    int   filefd = EOF;
-    void *pfilebuf;
-
-    /* sanity checks */
-    if ( filename == (char*) 0 )
-	return NULL;
-    if ( filename[0] == '\0' )
-	return NULL;
-    if ( pfilesize == (int*) 0 )
-	return NULL;
-
-    /* get file size */
-    if ( stat( filename, &sb ) != 0)
-	return NULL;
-
-    /* an empty file or a too big file is not mapped */
-    if ( sb.st_size == 0 )
-	return NULL;
-
-    if ( sb.st_size > 16384 )
-	return NULL;
-
-    /* alloc file contents (no fdmap) */
-    if ( ( pfilebuf = malloc( sb.st_size + sizeof(long) ) ) == NULL )
-	return NULL;
-
-    if ( ( filefd = open( filename, O_RDONLY ) ) == -1 )
-	{
-	free( pfilebuf );
-	return NULL;
-	}
-
-    if ( read( filefd, pfilebuf, sb.st_size ) != (ssize_t) sb.st_size )
-	{
-	free( pfilebuf );
-	(void) close( filefd );
-	return NULL;
-	}
-
-    (void) close( filefd );
-
-    /* OK, return */
-
-    *pfilesize = (int) sb.st_size;
-
-    return pfilebuf;
-    }
-#endif /* USE_LAYOUT */
-
-
 static void
 read_config( char* filename )
     {
@@ -2197,42 +2133,6 @@ read_config( char* filename )
 		     iValue = 1073741824;
 		MaxKeepAliveFileSize = iValue;
 		}
-#ifdef USE_LAYOUT
-	    /* we assume to find out at most one file */
-	    /* per type (header / footer) */
-	    else if ( strcasecmp( name, "layout_header" ) == 0 )
-		{
-		value_required( name, value );
-		/* avoid memory leak when there are multiple layout_header= */
-		if ( lheaderfile != NULL )
-		    free( lheaderfile );
-		if ( lheaderfile_map != NULL )
-		    free( lheaderfile_map );
-		lheaderfile = value;
-		lheaderfile_len = 0;
-		if ( ( lheaderfile_map = (char*) map_layoutfile(
-				lheaderfile, &lheaderfile_len ) ) == NULL )
-		    lheaderfile = NULL;
-		else
-		    lheaderfile = e_strdup( value );
-		}
-	    else if ( strcasecmp( name, "layout_footer" ) == 0 )
-		{
-		value_required( name, value );
-		/* avoid memory leak when there are multiple layout_footer= */
-		if ( lfooterfile != NULL )
-		    free( lfooterfile );
-		if ( lfooterfile_map != NULL )
-		    free( lfooterfile_map );
-		lfooterfile = value;
-		lfooterfile_len = 0;
-		if ( ( lfooterfile_map = (char*) map_layoutfile(
-				lfooterfile, &lfooterfile_len ) ) == NULL )
-		    lfooterfile = NULL;
-		else
-		    lfooterfile = e_strdup( value );
-		}
-#endif /* USE_LAYOUT */
 	    else
 		{
 		(void) fprintf( stderr,
@@ -2846,11 +2746,6 @@ handle_newconnect( struct timeval* tvP, int listen_fd, int is_sctp )
 	c->bytes_throttled = 0;
 	c->bytes_to_send = 0;
 	c->bytes_sent = 0;
-#ifdef USE_LAYOUT
-	c->hc->layout = 0;
-	c->hc->lheaderfile_len = 0;
-	c->hc->lfooterfile_len = 0;
-#endif /* USE_LAYOUT */
 
 #ifndef INHERIT_FD_NONBLOCK_AA
 	/*
@@ -2996,43 +2891,6 @@ handle_buf_read( connecttab* c, struct timeval* tvP )
 	}
 
     /* Fill in bytes_to_send. */
-#ifdef USE_LAYOUT
-    if ( hc->layout && hc->got_range )
-	{
-	/* we assume that the following conditions have already been checked */
-	/*    1) init_byte_loc   <= end_byte_loc */
-	/*    2) lheaderfile_len <= end_byte_loc */
-	/*    3) end_byte_loc    < lheaderfile_len + bytes_to_send */
-	/*    4) bytes_to_send   > 0 (if bytes_to_send < 1 then no layout) */
-	/* NOTE: send_mime() has already been called so we cannot change */
-	/*       init_byte_loc and end_byte_loc here, they must be right ! */
-
-	if ( hc->end_byte_loc < hc->lheaderfile_len + hc->bytes_to_send )
-	    {
-	    hc->lfooterfile_len = 0;
-	    c->bytes_to_send = hc->end_byte_loc + 1 - hc->lheaderfile_len;
-	    }
-	else
-	    c->bytes_to_send = hc->bytes_to_send;
-
-	if ( hc->init_byte_loc < hc->lheaderfile_len )
-	    /* c->bytes_sent == 0 */
-	    hc->lheaderfile_len -= hc->init_byte_loc;
-	else
-	    { /* hc->lheaderfile_len = 0 is setted later */
-	    if ( hc->init_byte_loc < hc->lheaderfile_len + hc->bytes_to_send )
-		c->bytes_sent = hc->init_byte_loc - hc->lheaderfile_len;
-	    else
-		{
-		c->bytes_sent = hc->bytes_to_send;
-		hc->lfooterfile_len -= ( hc->init_byte_loc -
-			( hc->lheaderfile_len + hc->bytes_to_send ) );
-		}
-	    hc->lheaderfile_len = 0;
-	    }
-	}
-    else
-#endif /* USE_LAYOUT */
     if ( hc->got_range )
 	{
 	c->bytes_sent = hc->init_byte_loc;
@@ -3052,13 +2910,8 @@ handle_buf_read( connecttab* c, struct timeval* tvP )
 	resp_clear_connection( c, tvP, DO_KEEP_ALIVE );
 	return;
 	}
-#ifndef USE_LAYOUT
+
     if ( c->bytes_sent >= c->bytes_to_send )
-#else  /* USE_LAYOUT */
-    if ( c->bytes_sent >= c->bytes_to_send &&
-	 hc->lheaderfile_len == 0 &&
-	 hc->lfooterfile_len == 0 )
-#endif /* USE_LAYOUT */
 	{
 	/* There's no body to send (zero sized file) */
 	resp_clear_connection( c, tvP, DO_KEEP_ALIVE );
@@ -3183,10 +3036,6 @@ handle_send( connecttab* c, struct timeval* tvP )
     int bytes_to_write = 0;
     ClientData client_data;
     httpd_conn* hc = c->hc;
-#ifdef USE_LAYOUT
-    int iovidx = 0;
-    struct iovec iv[5];
-#endif
     struct msghdr msg;
     struct cmsghdr *cmsg;
     struct iovec iv[2];
@@ -3205,13 +3054,9 @@ handle_send( connecttab* c, struct timeval* tvP )
 
     /* Are we done?  We don't check for headers because here */
     /* we always send non empty files. */
-#ifndef USE_LAYOUT
-    if ( c->bytes_sent >= c->bytes_to_send )
-#else
     if ( c->bytes_sent >= c->bytes_to_send &&
 	( hc->layout == 0 ||
 	( hc->lheaderfile_len == 0 && hc->lfooterfile_len == 0 ) ) )
-#endif /* USE_LAYOUT */
 	{
 	/* This reply is over and socket send buffer should be almost empty.
 	** Now we can safely start reading next HTTP/1.1 request without
@@ -3230,8 +3075,6 @@ handle_send( connecttab* c, struct timeval* tvP )
 	}
 #endif
 
-
-#ifndef USE_LAYOUT
     iv[0].iov_base = hc->response;
     iv[0].iov_len = hc->responselen;
     iv[1].iov_base = &(hc->file_address[c->bytes_sent]);
@@ -3329,118 +3172,6 @@ handle_send( connecttab* c, struct timeval* tvP )
     msg.msg_flags = 0;
     sz = sendmsg( hc->conn_fd, &msg, 0 );
 
-#else
-    /* USE_LAYOUT */
-
-    /*
-    ** we don't deploy sendfilev() (available in Solaris 8/9) capabilities,
-    ** so we have to do some dirty "hack" when we use httpd_sendfile()
-    */
-
-    if ( hc->file_fd != EOF )
-	{
-	int hdrlen = 0;
-
-	/* Do we have header bytes to send ? */
-	if ( hc->responselen > 0 )
-	    {
-	    iv[iovidx].iov_base = hc->response;
-	    iv[iovidx++].iov_len = (size_t) hc->responselen;
-	    hdrlen += hc->responselen;
-	    }
-
-	/* Do we have layout header bytes to send ? */
-	if ( hc->layout && hc->lheaderfile_len > 0 )
-	    {
-	    iv[iovidx].iov_base = lheaderfile_map +
-				( lheaderfile_len - hc->lheaderfile_len );
-	    iv[iovidx++].iov_len = (size_t) hc->lheaderfile_len;
-	    hdrlen += hc->lheaderfile_len;
-	    }
-
-	/* if needed then write headers */
-	if ( iovidx > 0 )
-	    sz = writev( hc->conn_fd, iv, iovidx );
-
-	/* if headers have been completely sent then send file content */
-	if ( sz == hdrlen && c->bytes_sent < c->bytes_to_send )
-	    {
-	    int sz2;
-	    bytes_to_write = (int)
-		MIN( c->bytes_to_send - c->bytes_sent, max_bytes );
-	    sz2 = httpd_sendfile( hc->conn_fd, hc->file_fd, c->bytes_sent,
-		bytes_to_write );
-	    if ( hdrlen > 0 )
-		{
-		if ( sz2 > 0 )
-		    /* OK, we successfully sent */
-		    /* some file content after headers */
-		    sz += sz2;
-		else
-		    /* otherwise ignore I/O errors */
-		    bytes_to_write = 0;
-		}
-	    else
-		/* headers were sent in previous calls */
-		sz = sz2;
-	    }
-	else
-	/* Do we have layout footer bytes to send ? */
-	if ( c->bytes_sent >= c->bytes_to_send &&
-	     hdrlen == 0 && hc->layout && hc->lfooterfile_len > 0)
-	    {
-	    sz = write( hc->conn_fd,
-		lfooterfile_map + ( lfooterfile_len - hc->lfooterfile_len ),
-		hc->lfooterfile_len );
-	    }
-	}
-    else
-	{
-	/* Do we have header bytes to send ? */
-	if ( hc->responselen > 0 )
-	    {
-	    iv[iovidx].iov_base = hc->response;
-	    iv[iovidx++].iov_len = (size_t) hc->responselen;
-	    }
-
-	/* Do we have layout header bytes to send ? */
-	if ( hc->layout && hc->lheaderfile_len > 0 )
-	    {
-	    iv[iovidx].iov_base = lheaderfile_map +
-				( lheaderfile_len - hc->lheaderfile_len );
-	    iv[iovidx++].iov_len = (size_t) hc->lheaderfile_len;
-	    }
-
-	/* Do we have file content bytes to send ? */
-	if ( c->bytes_sent < c->bytes_to_send )
-	    {
-	    bytes_to_write = (int)
-		MIN( c->bytes_to_send - c->bytes_sent, max_bytes );
-	    iv[iovidx].iov_base = &(hc->file_address[c->bytes_sent]);
-	    iv[iovidx++].iov_len = (size_t) bytes_to_write;
-	    }
-
-	/* Do we have layout footer bytes to send ? */
-	if ( hc->layout && hc->lfooterfile_len > 0)
-	    {
-	    iv[iovidx].iov_base = lfooterfile_map +
-				( lfooterfile_len - hc->lfooterfile_len );
-	    iv[iovidx++].iov_len = (size_t) hc->lfooterfile_len;
-	    }
-
-	/* Do we need a single write ? */
-	if ( iovidx == 1 )
-	    /* Yes, then use write */
-	    sz = write( hc->conn_fd, iv[0].iov_base, iv[0].iov_len );
-	else
-	    /* No.  We'll combine headers, layout and file into
-	    ** a single writev(), hoping that this generates a single packet.
-	    */
-	    sz = writev( hc->conn_fd, iv, iovidx );
-	}
-
-#endif /* USE_LAYOUT */
-
     if ( sz == 0 ||
 	 ( sz < 0 && ( errno == EWOULDBLOCK || errno == EAGAIN ) ) )
 	{
@@ -3524,74 +3255,20 @@ handle_send( connecttab* c, struct timeval* tvP )
 
     stats_body_bytes += sz;
 
-#ifndef USE_LAYOUT
     /* And update how much of the file we wrote. */
     c->bytes_throttled += sz;
     c->bytes_sent  += sz;
     c->hc->bytes_sent += sz;
     for ( i = 0; i < c->numtnums; ++i )
 	throttles[c->tnums[i]].bytes_since_avg += sz;
-#else
-    /* USE_LAYOUT */
 
-    if ( hc->layout && hc->lheaderfile_len > 0 )
-	/* was this a layout header write too ? */
-	if ( sz < hc->lheaderfile_len )
-	    {	/* did we finish writing it ? */
-	    hc->lheaderfile_len -= sz;
-	    sz = 0;
-	    }
-	else
-	    {
-	    sz -= hc->lheaderfile_len;
-	    hc->lheaderfile_len = 0;
-	    }
-
-    if ( sz > 0 && c->bytes_sent < c->bytes_to_send )
-	/* Have we written some file content ? */
-	if ( sz < bytes_to_write )
-	    {	/* update how much of the file we wrote. */
-	    c->bytes_throttled += sz;
-	    c->bytes_sent += sz;
-	    c->hc->bytes_sent += sz;
-	    for ( i = 0; i < c->numtnums; ++i )
-		throttles[c->tnums[i]].bytes_since_avg += sz;
-	    sz = 0;
-	    }
-	else
-	    {
-	    sz -= bytes_to_write;
-	    c->bytes_throttled += bytes_to_write;
-	    c->bytes_sent += bytes_to_write;
-	    c->hc->bytes_sent += bytes_to_write;
-	    for ( i = 0; i < c->numtnums; ++i )
-		throttles[c->tnums[i]].bytes_since_avg += bytes_to_write;
-	    }
-
-    if ( sz > 0 && hc->layout && hc->lfooterfile_len > 0 )
-	/* was this a layout footer write too ? */
-	if ( sz < hc->lfooterfile_len )
-	    {	/* did we finish writing it ? */
-	    hc->lfooterfile_len -= sz;
-	    sz = 0;
-	    }
-	else
-	    {
-	    sz -= hc->lfooterfile_len;
-	    hc->lfooterfile_len = 0;
-	    }
-#endif /* USE_LAYOUT */
     /*
     ** Have we written everything ?
     ** We don't check for headers because
     ** we always send non empty files.
     */
-#ifndef USE_LAYOUT
+
     if ( c->bytes_sent >= c->bytes_to_send )
-#else
-    if ( c->bytes_sent >= c->bytes_to_send &&
-	( hc->layout == 0 || hc->lfooterfile_len == 0 ) )
-#endif /* USE_LAYOUT */
 	{
 	/* This reply is over,
 	** if we don't do keep-alive or we do it and there is

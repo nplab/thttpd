@@ -206,11 +206,6 @@ typedef struct {
 #endif
     int file_fd;
     char* file_address;
-#ifdef USE_LAYOUT
-/* Layout vars per each connection */
-    int layout;
-    int lheaderfile_len, lfooterfile_len;
-#endif /* USE_LAYOUT */
     } httpd_conn;
 
 /* Methods (values must be numbered sequentially). */
