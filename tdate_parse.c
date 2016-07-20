@@ -1,6 +1,6 @@
 /* tdate_parse - parse string dates into internal form, stripped-down version
 **
-** Copyright © 1995 by Jef Poskanzer <jef@acme.com>.
+** Copyright ï¿½ 1995 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -659,7 +659,6 @@ tdate_parse( char* str )
     else
     if ( isdigit( *cp ) )
 	{
-	int r;
 	/* Uncommon date-time formats */
 	/* -------------------------- */
 	/* HH:MM:SS GMT DD-mth-YY     */

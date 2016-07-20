@@ -2352,7 +2352,7 @@ lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockad
 	    {
 	    syslog(
 		LOG_CRIT, "%.80s - sockaddr too small (%d < %d)",
-		hostname, sa4_len, aiv4->ai_addrlen );
+		hostname, (int)sa4_len, aiv4->ai_addrlen );
 	    exit( 67 );
 	    }
 	memset( sa4P, 0, sa4_len );
@@ -2367,7 +2367,7 @@ lookup_hostname( httpd_sockaddr* sa4P, size_t sa4_len, int* gotv4P, httpd_sockad
 	    {
 	    syslog(
 		LOG_CRIT, "%.80s - sockaddr too small (%d < %d)",
-		hostname, sa6_len, aiv6->ai_addrlen );
+		hostname, (int)sa6_len, aiv6->ai_addrlen );
 	    exit( 68 );
 	    }
 	memset( sa6P, 0, sa6_len );
@@ -2590,7 +2590,7 @@ read_throttlefile( char* throttlefile, int* numthrottlesP )
 	    {
 	    syslog( LOG_WARNING,
 		"highered limit %ld to %ld at line(%d) in %.80s - %.80s",
-		limit, ( MIN_THROTTLE_LIMIT * 2 ), numline, throttlefile, buf );
+		limit, (long)( MIN_THROTTLE_LIMIT * 2 ), numline, throttlefile, buf );
 	     limit = MIN( MIN_THROTTLE_LIMIT * 2, MAX_THROTTLE_LIMIT );
 	    }
 	else
@@ -3230,20 +3230,6 @@ handle_send( connecttab* c, struct timeval* tvP )
 
 
 #ifndef USE_LAYOUT
-
-    /* Do we need to write the headers first? /
-    if ( hc->responselen <= 0 )
-	{
-	/* No, just write the file. /
-	bytes_to_write = (int)
-		MIN( c->bytes_to_send - c->bytes_sent, max_bytes );
-	if ( hc->file_fd != EOF )
-	    sz = httpd_sendfile( hc->conn_fd, hc->file_fd, c->bytes_sent,
-		bytes_to_write );
-	else
-	    sz = write( hc->conn_fd, &(hc->file_address[c->bytes_sent]),
-		bytes_to_write );
-	*/
     iv[0].iov_base = hc->response;
     iv[0].iov_len = hc->responselen;
     iv[1].iov_base = &(hc->file_address[c->bytes_sent]);
@@ -3261,7 +3247,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 	cmsg->cmsg_type = SCTP_SNDINFO;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
 	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
-	sndinfo->snd_sid = 0;
+	sndinfo->snd_sid = hc->sid++;
 	sndinfo->snd_flags = 0;
 #ifdef SCTP_EXPLICIT_EOR
 	if ( c->bytes_to_send - c->bytes_sent <= max_bytes )
@@ -4338,14 +4324,16 @@ clear_connection( connecttab* c, struct timeval* tvP, int do_keep_alive )
 	/* dynamically adapt linger time
 	** NOTE: keep alive (including pipelining) requires more time.
 	*/
-	if ( c->pipelining && numconnects < hiwmconnects2 )
-	if ( c->keep_alive == 0 )
-	    mlsLingerTime /= 2;
-	else
-	if ( c->pipelining != 0 )
-	    mlsLingerTime += 1000L;
-	else
-	    mlsLingerTime += 500L;
+	if ( c->pipelining && numconnects < hiwmconnects2 ) {
+    	if ( c->keep_alive == 0 ) {
+    	    mlsLingerTime /= 2;
+    	} else {
+        	if ( c->pipelining != 0 )
+        	    mlsLingerTime += 1000L;
+        	else
+        	    mlsLingerTime += 500L;
+        }
+    }
 #endif /* DYNAMIC_LINGER_TIME */
 
 	client_data.p = c;
@@ -4678,7 +4666,7 @@ thttpd_logstats( long secs )
 
     syslog( LOG_INFO,
 #ifdef HAVE_INT64T
-	"  thttpd - resp. %lld bytes (%lld/sec), body %lld bytes (%lld/sec)",
+	"  thttpd - resp. %ld bytes (%ld/sec), body %ld bytes (%ld/sec)",
 #else
 	"  thttpd - resp. %lu bytes (%lu/sec), body %lu bytes (%lu/sec)",
 #endif

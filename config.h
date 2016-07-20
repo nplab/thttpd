@@ -1,6 +1,6 @@
 /* config.h - configuration defines for thttpd and libhttpd
 **
-** Copyright © 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
+** Copyright ï¿½ 1995,1998,1999,2000,2001 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -1333,6 +1333,10 @@
 #if	defined(EXECUTE_CGI) || defined(GENERATE_INDEXES)
 #define EXECUTE_CHILD
 #endif
+#endif
+
+#ifndef SCTP_SNDINFO
+#define SCTP_SNDINFO
 #endif
 
 #endif /* _CONFIG_H_ */

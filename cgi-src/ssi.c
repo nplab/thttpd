@@ -1,6 +1,6 @@
 /* ssi - server-side-includes CGI program
 **
-** Copyright © 1995 by Jef Poskanzer <jef@acme.com>.
+** Copyright ï¿½ 1995 by Jef Poskanzer <jef@acme.com>.
 ** All rights reserved.
 **
 ** Redistribution and use in source and binary forms, with or without
@@ -215,12 +215,14 @@ check_filename( char* filename )
     {
     static int inited = 0;
     static char* cgi_pattern;
+#ifdef AUTH_FILE
     int fnl;
     char* cp;
     char* dirname;
     char* authname;
     struct stat sb;
     int r;
+#endif
 
     if ( ! inited )
 	{
@@ -549,7 +551,7 @@ parse( char* vfilename, char* filename, FILE* fp, char* str )
 	if ( ntags < sizeof(tags)/sizeof(*tags) )
 	    tags[ntags++] = cp;
 	}
-    
+
     if ( strcmp( directive, "config" ) == 0 )
 	dirn = DI_CONFIG;
     else if ( strcmp( directive, "include" ) == 0 )

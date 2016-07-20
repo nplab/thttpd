@@ -202,6 +202,7 @@ typedef struct {
     unsigned int no_o_streams;
     size_t send_at_once_limit;
     int use_eeor;
+    int sid;
 #endif
     int file_fd;
     char* file_address;
@@ -452,5 +453,16 @@ extern ssize_t
 
 /* Generate debugging statistics syslog message. */
 extern void httpd_logstats( long secs );
+
+extern ssize_t httpd_write_fully( int fd, const char* buf, size_t nbytes );
+
+#ifdef USE_SCTP
+ssize_t
+httpd_write_sctp( int fd, const char * buf, size_t nbytes,
+                  int use_eeor, int eor, uint32_t ppid, uint16_t sid );
+ssize_t
+httpd_write_fully_sctp( httpd_conn* hc , const char * buf, size_t nbytes,
+                        int use_eeor, int eor, size_t send_at_once_limit );
+#endif
 
 #endif /* _LIBHTTPD_H_ */

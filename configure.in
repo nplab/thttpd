@@ -45,7 +45,7 @@ if test "$GCC" = yes ; then
 fi
 if test -f .devel ; then
 	V_CCOPT="-O0"
-	V_CCOPT="-g $V_CCOPT -Wall -Wmissing-prototypes -Wstrict-prototypes"
+	V_CCOPT="-g $V_CCOPT -Wall -Wmissing-prototypes -Wstrict-prototypes -Wno-unused-but-set-variable"
 fi
 
 dnl

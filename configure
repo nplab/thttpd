@@ -919,7 +919,7 @@ fi
 fi
 if test -f .devel ; then
 	V_CCOPT="-O0"
-	V_CCOPT="-g $V_CCOPT -Wall -Wmissing-prototypes -Wstrict-prototypes"
+	V_CCOPT="-g $V_CCOPT -Wall -Wmissing-prototypes -Wstrict-prototypes -Wno-unused-but-set-variable"
 fi
 
 echo $ac_n "checking how to link static binaries""... $ac_c" 1>&6
