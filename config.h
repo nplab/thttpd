@@ -1312,19 +1312,6 @@
 #define USE_MY_OLD_SYSLOG
 #endif
 
-/* CONFIGURE: Define this if you want to use layout handling
-** in order to be able to send a static header and/or footer
-** with every html file served.
-** You also need to add:
-**     layout_header=filename
-** and/or
-**     layout_footer=filename
-** to configuration file (-C option) to effectively enable it.
-*/
-#ifdef notdef
-#define USE_LAYOUT
-#endif
-
 /* CONFIGURE: This define is automatically enabled when needed;
 ** if you want to disable child execution, undefine both above
 ** EXECUTE_CGI and GENERATE_INDEXES.
