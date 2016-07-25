@@ -1062,7 +1062,7 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	}
 #endif
 #if defined(SCTP_RECVRCVINFO)
-    /* Disable the Packet Drop Report extension */
+    /* Enable RCVINFO delivery */
 	on = 1;
     if ( setsockopt(
 	     listen_fd, IPPROTO_SCTP, SCTP_RECVRCVINFO, (char*) &on,
@@ -1461,7 +1461,7 @@ httpd_write_fully_sctp( httpd_conn* hc , const char * buf, size_t nbytes,
 	    nwrite = nbytes - nwritten;
 	    }
 
-	r = httpd_write_sctp( hc->conn_fd, (void *)(buf + nwritten), nwrite, use_eeor, eor, 0, 2);
+	r = httpd_write_sctp( hc->conn_fd, (void *)(buf + nwritten), nwrite, use_eeor, eor, 0, hc->sid );
 
 	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
 	    {
@@ -5821,7 +5821,7 @@ Mode  Links  Bytes  Last-Changed  Name\n\
 	    if ( hc->is_sctp )
 		{
 		const char *trailer = "    </pre>\n  </body>\n</html>\n";
-		(void) httpd_write_sctp( hc->conn_fd, trailer, strlen(trailer), hc->use_eeor, 1, 0, hc->sid++ );
+		(void) httpd_write_sctp( hc->conn_fd, trailer, strlen(trailer), hc->use_eeor, 1, 0, hc->sid );
 		}
 	    else
 		(void) dprintf( hc->conn_fd, "    </pre>\n  </body>\n</html>\n" );

@@ -2945,6 +2945,17 @@ handle_read( connecttab* c, struct timeval* tvP )
     {
     int sz;
     httpd_conn* hc = c->hc;
+	struct msghdr msg;
+	struct iovec iov;
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_rcvinfo))];
+    struct sctp_rcvinfo *rcvinfo;
+    memset(cmsgbuf, 0, CMSG_SPACE(sizeof(struct sctp_rcvinfo)));
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+    memset(cmsgbuf, 0, CMSG_SPACE(sizeof(struct sctp_sndrcvinfo)));
+#endif
 
     /* Is there room in our buffer to read more bytes? */
     if ( hc->read_idx >= hc->read_size )
@@ -2967,9 +2978,26 @@ handle_read( connecttab* c, struct timeval* tvP )
 	}
 
     /* Read some more bytes. */
+
+    /*
     sz = read(
 	hc->conn_fd, &(hc->read_buf[hc->read_idx]),
 	hc->read_size - hc->read_idx );
+    */
+
+    iov.iov_base = &(hc->read_buf[hc->read_idx]);
+	iov.iov_len = hc->read_size - hc->read_idx;
+	msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = cmsgbuf;
+	msg.msg_controllen = sizeof(cmsgbuf);
+    rcvinfo = (struct sctp_rcvinfo *)CMSG_DATA(cmsgbuf);
+	sz = recvmsg(hc->conn_fd, &msg, 0);
+
+    hc->sid = rcvinfo->rcv_sid;
+
     if ( sz == 0 )
 	{
 	/* EOF */
@@ -3090,7 +3118,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 	cmsg->cmsg_type = SCTP_SNDINFO;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
 	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
-	sndinfo->snd_sid = hc->sid++;
+	sndinfo->snd_sid = hc->sid;
 	sndinfo->snd_flags = 0;
 #ifdef SCTP_EXPLICIT_EOR
 	if ( c->bytes_to_send - c->bytes_sent <= max_bytes )
