@@ -7,12 +7,16 @@ SET(CMAKE_MACOSX_RPATH 1)
 
 # SOURCES + HEADERS
 #################################################
+LIST(APPEND thttpd_headers
+    neat.h
+    neat_queue.h
+)
+
 LIST(APPEND thttpd_sources
     fdwatch.c
     libhttpd.c
     match.c
     mmc.c
-    strerr.c
     syslog.c
     tdate_parse.c
     thttpd.c
@@ -24,29 +28,21 @@ LIST(APPEND thttpd_sources
 IF (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     MESSAGE(STATUS ${CMAKE_SYSTEM_NAME} " supported")
     ADD_DEFINITIONS("-D_DEFAULT_SOURCE")
-    SET(LIB_DIR "/usr/local/lib")
-    SET(HDR_DIR "/usr/local/include/neat")
 
 ELSEIF (${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
     MESSAGE(STATUS ${CMAKE_SYSTEM_NAME} " supported")
-    SET(LIB_DIR "/usr/local/lib")
-    SET(HDR_DIR "/usr/local/include/neat")
     SET(CMAKE_REQUIRED_INCLUDES "/usr/local/include" "/usr/include")
     SET(CMAKE_LIBRARY_PATH "/usr/local/lib")
     INCLUDE_DIRECTORIES("/usr/local/include")
 
 ELSEIF (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     MESSAGE(STATUS ${CMAKE_SYSTEM_NAME} " supported")
-    SET(LIB_DIR "/usr/local/lib")
-    SET(HDR_DIR "/usr/local/include/neat")
     SET(CMAKE_REQUIRED_INCLUDES "/usr/local/include" "/usr/include" "/usr/local/opt/openssl/include")
     SET(CMAKE_LIBRARY_PATH "/usr/local/lib")
     INCLUDE_DIRECTORIES("/usr/local/include" "/usr/local/opt/openssl/include")
 
 ELSEIF (${CMAKE_SYSTEM_NAME} MATCHES "NetBSD")
     MESSAGE(STATUS ${CMAKE_SYSTEM_NAME} " supported")
-    SET(LIB_DIR "/usr/local/lib")
-    SET(HDR_DIR "/usr/local/include/neat")
     SET(CMAKE_REQUIRED_INCLUDES "/usr/pkg/include" "/usr/include" "/usr/local/include")
     SET(CMAKE_LIBRARY_PATH "/usr/local/lib")
     INCLUDE_DIRECTORIES("/usr/pkg/include" "/usr/local/include")
@@ -158,22 +154,4 @@ IF (CMAKE_BUILD_TYPE MATCHES DEBUG)
     SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
 ENDIF()
 
-# LIBRARIES
-#################################################
-# PROGRAMS LIST
-#################################################
-LIST(APPEND neat_programs
-    thttpd.c
-)
-
-
-# BUILD EACH PROGRAM
-#################################################
-FOREACH (source_file ${neat_programs})
-    GET_FILENAME_COMPONENT(source_file_we ${source_file} NAME_WE)
-    ADD_EXECUTABLE (
-        ${source_file_we}
-        ${source_file}
-    )
-    TARGET_LINK_LIBRARIES(${source_file_we} neat)
-ENDFOREACH ()
+ADD_EXECUTABLE (thttpd ${thttpd_sources})
