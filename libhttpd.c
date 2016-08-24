@@ -2093,7 +2093,7 @@ send_mime( httpd_conn* hc, int status, const char* title, int titlelen,
 		}
 	    if ( hc->do_keep_alive &&
 		  hc->method != METHOD_HEAD &&
-		  status != 304 && status != 204 &&
+		  status != 304 && status != 204 && status != 404 &&
 		( status < 100 || status > 199 ) )
 		{	/* unknown length (-1), close connection */
 		hc->do_keep_alive = 0;
@@ -2535,9 +2535,10 @@ httpd_send_err( httpd_conn* hc, int status, char* title, int titlelen,
 
     /* Be sure to disable keep alive because
     ** the connection will be closed anyway.
+    ** felix: 404 keep alive!!!!
     */
-    if ( hc->do_keep_alive )
-	hc->do_keep_alive = 0;
+    if ( hc->do_keep_alive && status != 404)
+        hc->do_keep_alive = 0;
 
     /* These tests should work also for HTTP/0.9 because
     ** it has only GET method without any headers,

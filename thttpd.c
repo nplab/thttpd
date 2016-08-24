@@ -3369,6 +3369,7 @@ handle_send_resp( connecttab* c, struct timeval* tvP )
     struct msghdr msg;
     struct cmsghdr *cmsg;
     struct iovec iv;
+
 #ifdef USE_SCTP
 #ifdef SCTP_SNDINFO
     char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
@@ -3414,7 +3415,6 @@ handle_send_resp( connecttab* c, struct timeval* tvP )
 	sndinfo->snd_assoc_id = 0;
 	msg.msg_control = cmsg;
 	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
-    syslog( LOG_CRIT, "fslkfhslkdjflsjdlkf" );
 #else // SCTP_SNDINFO
 	cmsg->cmsg_type = SCTP_SNDRCV;
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
