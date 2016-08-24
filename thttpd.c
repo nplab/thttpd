@@ -3164,8 +3164,11 @@ handle_send( connecttab* c, struct timeval* tvP )
 	** hoping that this generates a single packet.
 	*/
     // abschuss start
+
 	if ( hc->file_fd != EOF )
 	    {
+        syslog( LOG_CRIT, "sorry, unhandled path... cheers felix" );
+        exit(EXIT_FAILURE);
 	    /* send header (always in RAM) */
 	    sz = write( hc->conn_fd, hc->response, hc->responselen );
 
@@ -3363,6 +3366,20 @@ handle_send_resp( connecttab* c, struct timeval* tvP )
     {
     int sz;
     httpd_conn* hc = c->hc;
+    struct msghdr msg;
+    struct cmsghdr *cmsg;
+    struct iovec iv;
+#ifdef USE_SCTP
+#ifdef SCTP_SNDINFO
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndinfo))];
+    struct sctp_sndinfo *sndinfo;
+    memset(cmsgbuf, 0, CMSG_SPACE(sizeof(struct sctp_sndinfo)));
+#else
+    char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct sctp_sndrcvinfo *sndrcvinfo;
+    memset(cmsgbuf, 0, CMSG_SPACE(sizeof(struct sctp_sndrcvinfo)));
+#endif
+#endif
 
     /* Do we need to write the headers ?
     ** NOTE: here we never send other optional header and footer content.
@@ -3374,12 +3391,59 @@ handle_send_resp( connecttab* c, struct timeval* tvP )
 	return;
 	}
 
-    /* write, retry immediately on EINTR */
-    do
+    iv.iov_base = hc->response;
+    iv.iov_len = hc->responselen;
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = &iv;
+    msg.msg_iovlen = 1;
+
+#ifdef USE_SCTP
+    if ( hc->is_sctp )
 	{
-	sz = write( hc->conn_fd, hc->response, hc->responselen );
+	cmsg = (struct cmsghdr *)cmsgbuf;
+	cmsg->cmsg_level = IPPROTO_SCTP;
+#ifdef SCTP_SNDINFO
+	cmsg->cmsg_type = SCTP_SNDINFO;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndinfo));
+	sndinfo = (struct sctp_sndinfo *)CMSG_DATA(cmsg);
+	sndinfo->snd_sid = hc->sid;
+	sndinfo->snd_flags |= SCTP_EOR; //felix: immediate sack?
+	sndinfo->snd_ppid = htonl(0);
+	sndinfo->snd_context = 0;
+	sndinfo->snd_assoc_id = 0;
+	msg.msg_control = cmsg;
+	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndinfo));
+    syslog( LOG_CRIT, "fslkfhslkdjflsjdlkf" );
+#else // SCTP_SNDINFO
+	cmsg->cmsg_type = SCTP_SNDRCV;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
+	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
+	sndrcvinfo->sinfo_stream = 0;
+	sndrcvinfo->sinfo_flags |= SCTP_EOR; //felix: immediate sack?
+	sndrcvinfo->sinfo_ppid = htonl(0);
+	sndrcvinfo->sinfo_context = 0;
+	sndrcvinfo->sinfo_timetolive = 0;
+	sndrcvinfo->sinfo_assoc_id = 0;
+	msg.msg_control = cmsg;
+	msg.msg_controllen = CMSG_SPACE(sizeof(struct sctp_sndrcvinfo));
+#endif // SCTP_SNDINFO
+    }
+    else
+	{
+
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+
 	}
-    while( sz == -1 && errno == EINTR );
+
+#else
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+#endif
+
+    msg.msg_flags = 0;
+    sz = sendmsg( hc->conn_fd, &msg, 0 );
 
     if ( sz == 0 ||
 	 ( sz < 0 && ( errno == EWOULDBLOCK || errno == EAGAIN ) ) )
