@@ -35,6 +35,7 @@
 #include <syslog.h>
 #include <errno.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
@@ -1807,7 +1808,7 @@ mmc_logstats( long secs )
 	syslog(
 		LOG_INFO,
 #ifdef HAVE_INT64T
-"  L%d-%s:   %6d %6d %5d %6d %6d   %16lld",
+"  L%d-%s:   %6d %6d %5d %6d %6d   %16ld",
 #else
 "  L%d-%s:   %6d %6d %5d %6d %6d   %16ld",
 #endif

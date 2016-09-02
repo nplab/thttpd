@@ -1322,12 +1322,4 @@
 #endif
 #endif
 
-#ifndef SCTP_SNDINFO
-#define SCTP_SNDINFO
-#endif
-
-#ifndef SCTP_RECVRCVINFO
-#define SCTP_RECVRCVINFO
-#endif
-
 #endif /* _CONFIG_H_ */

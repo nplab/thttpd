@@ -2947,6 +2947,7 @@ handle_read( connecttab* c, struct timeval* tvP )
     httpd_conn* hc = c->hc;
 	struct msghdr msg;
 	struct iovec iov;
+    struct cmsghdr *scmsg;
 #ifdef SCTP_SNDINFO
     char cmsgbuf[CMSG_SPACE(sizeof(struct sctp_rcvinfo))];
     struct sctp_rcvinfo *rcvinfo;
@@ -2993,10 +2994,24 @@ handle_read( connecttab* c, struct timeval* tvP )
 	msg.msg_iovlen = 1;
 	msg.msg_control = cmsgbuf;
 	msg.msg_controllen = sizeof(cmsgbuf);
-    rcvinfo = (struct sctp_rcvinfo *)CMSG_DATA(cmsgbuf);
+
 	sz = recvmsg(hc->conn_fd, &msg, 0);
 
-    hc->sid = rcvinfo->rcv_sid;
+    if (c->hc->is_sctp) {
+        scmsg = CMSG_FIRSTHDR(&msg);
+        if (scmsg == NULL) {
+            syslog( LOG_CRIT, "could not get cmsg" );
+            exit(EXIT_FAILURE);
+        }
+
+#ifdef SCTP_RCVINFO
+        rcvinfo = (struct sctp_rcvinfo *)CMSG_DATA(scmsg);
+        hc->sid = rcvinfo->rcv_sid;
+#else
+        sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(scmsg);
+        hc->sid = sndrcvinfo->sinfo_stream;
+#endif
+    }
 
     if ( sz == 0 )
 	{
@@ -3420,7 +3435,9 @@ handle_send_resp( connecttab* c, struct timeval* tvP )
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
 	sndrcvinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
 	sndrcvinfo->sinfo_stream = 0;
+#ifdef SCTP_EXPLICIT_EOR
 	sndrcvinfo->sinfo_flags |= SCTP_EOR; //felix: immediate sack?
+#endif
 	sndrcvinfo->sinfo_ppid = htonl(0);
 	sndrcvinfo->sinfo_context = 0;
 	sndrcvinfo->sinfo_timetolive = 0;
