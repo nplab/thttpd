@@ -16,13 +16,6 @@ config.h
 config.sub
 configure
 configure.in
-extras/Makefile.in
-extras/htpasswd.1
-extras/htpasswd.c
-extras/makeweb.1
-extras/makeweb.c
-extras/syslogtocern
-extras/syslogtocern.8
 index.html
 install-sh
 libhttpd.c
