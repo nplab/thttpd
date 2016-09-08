@@ -2198,7 +2198,6 @@ send_response( httpd_conn* hc, int status, char* title, int titlelen,
 		char* extraheads, char* form, const char* arg )
     {
     int  headers_len = 0;
-    char buf[1024];
 
     hc->encodings[0]  = '\0';
     hc->encodings_len = 0;
@@ -2218,6 +2217,7 @@ send_response( httpd_conn* hc, int status, char* title, int titlelen,
 
     hc->type     =       MIME_TYPE_TEXT_HTML;
     hc->type_len = SZLEN(MIME_TYPE_TEXT_HTML);
+    send_mime( hc, status, title, titlelen, extraheads, -1, (time_t) 0 );
 
     headers_len = hc->responselen;
 
@@ -2250,6 +2250,7 @@ send_response( httpd_conn* hc, int status, char* title, int titlelen,
     if ( *form != '\0' )
 	{
 	char defanged_arg[256];
+	char buf[1024];
 
 	buf[0] = '\0';
 	defanged_arg[0] = '\0';
@@ -2268,13 +2269,6 @@ send_response( httpd_conn* hc, int status, char* title, int titlelen,
 	}
 
     send_response_tail( hc, headers_len );
-
-    memcpy(buf, hc->response, hc->responselen);
-    int buflen = hc->responselen;
-    hc->responselen = 0;
-    send_mime( hc, status, title, titlelen, extraheads, buflen, (time_t) 0 );
-    add_response(hc, buf);
-
     }
 
 
@@ -2542,8 +2536,8 @@ httpd_send_err( httpd_conn* hc, int status, char* title, int titlelen,
     /* Be sure to disable keep alive because
     ** the connection will be closed anyway.
     */
-    /* if ( hc->do_keep_alive )
-	hc->do_keep_alive = 0; */
+    if ( hc->do_keep_alive )
+	hc->do_keep_alive = 0;
 
     /* These tests should work also for HTTP/0.9 because
     ** it has only GET method without any headers,
