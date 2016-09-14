@@ -2271,6 +2271,7 @@ send_response( httpd_conn* hc, int status, char* title, int titlelen,
 
     memcpy(buf, hc->response, hc->responselen);
     int buflen = hc->responselen;
+    buf[buflen] = '\0';
     hc->responselen = 0;
     send_mime( hc, status, title, titlelen, extraheads, buflen, (time_t) 0 );
     add_response(hc, buf);
