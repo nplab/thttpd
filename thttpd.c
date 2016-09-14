@@ -2886,7 +2886,7 @@ handle_buf_read( connecttab* c, struct timeval* tvP )
 					MaxKeepAliveFileSize ) < 0 )
 	{
 	/* Something went wrong.  Close down the connection. */
-	resp_clear_connection( c, tvP, NO_KEEP_ALIVE );
+	resp_clear_connection( c, tvP, DO_KEEP_ALIVE );
 	return;
 	}
 
