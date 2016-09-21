@@ -4875,8 +4875,10 @@ httpd_parse_request( httpd_conn* hc )
 			&pi, hc->hs->no_symlink, hc->tildemapped, &hc->sb );
     if ( cp == (char*) 0 )
 	{
-	httpd_send_err( hc, 500, err500title, err500titlelen,
-		"", err500form, hc->encodedurl );
+	//httpd_send_err( hc, 500, err500title, err500titlelen,
+		//"", err500form, hc->encodedurl );
+    httpd_send_err( hc, 404, err404title, err404titlelen,
+    "", err404form, hc->encodedurl );
 	return -1;
 	}
     httpd_realloc_str( &hc->expnfilename, &hc->maxexpnfilename, cp_len );
