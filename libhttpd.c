@@ -6926,8 +6926,11 @@ really_start_request( httpd_conn* hc, struct timeval* nowP,
 	   ( hc->origfilename[0] != '.' || hc->origfilename[1] != '\0' ) &&
 	     hc->origfilename[hc->origfn_len - 1] != '/' )
 	    {
-	    send_dirredirect( hc );
+      httpd_send_err( hc, 404, err404title, err404titlelen,
+			"", err404form, hc->encodedurl );
 	    return -1;
+	    //send_dirredirect( hc );
+	    //return -1;
 	    }
 
 	/* Look for an index file. */
