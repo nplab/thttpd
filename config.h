@@ -297,7 +297,7 @@
 ** Range  values: 2 - 64
 ** Default value: 12
 */
-#define IDLE_KEEPALIVE_TIMELIMIT 12
+#define IDLE_KEEPALIVE_TIMELIMIT 64 
 
 /* CONFIGURE: How many keep alive requests per connection to allow
 ** when there are few connections ( < high water mark 1, 60% ).
