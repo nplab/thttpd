@@ -2838,7 +2838,7 @@ handle_buf_read( connecttab* c, struct timeval* tvP )
     /* Yes.  Try parsing and resolving it. */
     if ( httpd_parse_request( hc ) < 0 )
 	{
-	resp_clear_connection( c, tvP, NO_KEEP_ALIVE );
+	resp_clear_connection( c, tvP, DO_KEEP_ALIVE );
 	return;
 	}
 
