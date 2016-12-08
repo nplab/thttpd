@@ -1073,6 +1073,18 @@ initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P )
 	return -1;
 	}
 #endif
+#if defined(SCTP_NODELAY)
+    /* Enable RCVINFO delivery */
+	on = 1;
+    if ( setsockopt(
+	     listen_fd, IPPROTO_SCTP, SCTP_NODELAY, (char*) &on,
+		 sizeof(on) ) < 0 )
+	{
+	syslog( LOG_CRIT, "setsockopt SCTP_NODELAY - %m" );
+	(void) close( listen_fd );
+	return -1;
+	}
+#endif
 
     /* Bind to it. */
     if ( sa6P != (httpd_sockaddr*) 0 )
