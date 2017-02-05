@@ -243,6 +243,9 @@ httpd_initialize(
     char* hostname, httpd_sockaddr* sa4P, httpd_sockaddr* sa6P,
     unsigned short port, char* cgi_pattern, int cgi_limit, char* charset,
     char* p3p, int max_age, char* cwd, int no_log, FILE* logfp,
+#ifdef USE_SCTP
+    size_t send_at_once_limit, int use_eeor,
+#endif
     int no_symlink_check, int vhost, int global_passwd, char* url_pattern,
     char* local_pattern, int no_empty_referrers )
     {
@@ -362,6 +365,8 @@ httpd_initialize(
     else
 	hs->listen4_fd = initialize_listen_socket( sa4P );
 #ifdef USE_SCTP
+    hs->send_at_once_limit = send_at_once_limit;
+    hs->use_eeor = use_eeor;
     hs->listensctp_fd = initialize_listen_sctp_socket( sa4P, sa6P );
 #endif
     /* If we didn't get any valid sockets, fail. */
@@ -2040,7 +2045,7 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
     if ( is_sctp )
 	{
 	sz = (socklen_t)sizeof(struct sctp_status);
-	if ( getsockopt(hc->conn_fd, IPPROTO_SCTP, SCTP_STATUS, &status, &sz) < 0 )
+	if ( getsockopt( hc->conn_fd, IPPROTO_SCTP, SCTP_STATUS, &status, &sz) < 0 )
 	    {
 	    syslog( LOG_CRIT, "getsockopt SCTP_STATUS - %m" );
 	    close( hc->conn_fd );
@@ -2050,7 +2055,7 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 	hc->no_i_streams = status.sstat_instrms;
 	hc->no_o_streams = status.sstat_outstrms;
 	sz = (socklen_t)sizeof(int);
-	if ( getsockopt(hc->conn_fd, SOL_SOCKET, SO_SNDBUF, &sb_size, &sz) < 0 )
+	if ( getsockopt( hc->conn_fd, SOL_SOCKET, SO_SNDBUF, &sb_size, &sz) < 0 )
 	    {
 	    syslog( LOG_CRIT, "getsockopt SO_SNDBUF - %m" );
 	    close( hc->conn_fd );
@@ -2058,26 +2063,32 @@ httpd_get_conn( httpd_server* hs, int listen_fd, httpd_conn* hc, int is_sctp )
 	    return GC_FAIL;
 	    }
 	hc->send_at_once_limit = sb_size / 4;
+	if ( hs->send_at_once_limit > 0 &&
+	     hs->send_at_once_limit < hc->send_at_once_limit )
+	     {
+	     hc->send_at_once_limit = hs->send_at_once_limit;
+	     }
 #ifdef SCTP_EXPLICIT_EOR
-	sz = (socklen_t)sizeof(int);
-	if ( setsockopt(hc->conn_fd, IPPROTO_SCTP, SCTP_EXPLICIT_EOR, &on, sz) < 0 )
+	if ( hs->use_eeor )
 	    {
-	    syslog( LOG_CRIT, "getsockopt SCTP_EXPLICIT_EOR - %m" );
-	    close( hc->conn_fd );
-	    hc->conn_fd = -1;
-	    return GC_FAIL;
+	    sz = (socklen_t)sizeof(int);
+	    if ( setsockopt( hc->conn_fd, IPPROTO_SCTP, SCTP_EXPLICIT_EOR, &on, sz ) < 0 )
+		{
+		syslog( LOG_CRIT, "getsockopt SCTP_EXPLICIT_EOR - %m" );
+		close( hc->conn_fd );
+		hc->conn_fd = -1;
+		return GC_FAIL;
+		}
 	    }
-	hc->use_eeor = 1;
-#else
-	hc->use_eeor = 0;
 #endif
+	hc->use_eeor = hs->use_eeor;
 	}
     else
 	{
 	hc->no_i_streams = 0;
 	hc->no_o_streams = 0;
-	hc->send_at_once_limit = 0;
-	hc->use_eeor = 0;
+	hc->send_at_once_limit = hs->send_at_once_limit;
+	hc->use_eeor = hs->use_eeor;
 	}
 #endif
     return GC_OK;

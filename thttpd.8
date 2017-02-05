@@ -35,6 +35,9 @@ thttpd - tiny/turbo/throttling HTTP server
 .IR maxage ]
 .RB [ -V ]
 .RB [ -D ]
+.RB [ -B
+.IR size ]
+.RB [ -S ]
 .SH DESCRIPTION
 .PP
 .I thttpd
@@ -182,6 +185,21 @@ a background daemon.
 Instead it runs in the foreground like a regular program.
 This is necessary when you want to run thttpd wrapped in a little shell
 script that restarts it if it exits.
+.TP
+.B -B
+This option is only supported if the operating system supports SCTP.
+The value provided limits the amount data is provided to the SCTP stack
+in a send call. If it is set to a non-zero value, this amount is
+limited by the minimum of this vlaue and a quarter of the send buffer size.
+If not set or set to zero, the default is a quarter of the send buffer size.
+The config-file option name for this flag is "sctp_send_at_once_limit".
+.TP
+.B -S
+This option is only supported if the operating system supports SCTP.
+Some platforms support the sending of large user message. On these platforms
+every HTTP message is sent as a single SCTP user message. This can be tured off
+by setting this option.
+The config-file option name for this flag is "sctp_do_not_use_eeor".
 .SH "CONFIG-FILE"
 .PP
 All the command-line options can also be set in a config file.
@@ -561,6 +579,22 @@ new one.
 This is a little tricky to set up correctly, for instance if you are using
 chroot() then the log file must be within the chroot tree, but it's
 definitely doable.
+.SH SCTP
+.PP
+On operating systems supporting the Stream Control Transmission Protocol,
+thttpd also accepts SCTP associations in addition to TCP connections.
+There are two config-file variables for this feature:
+.TP
+.B sctp_send_at_once_limit
+This variable limits the amount data is provided to the SCTP stack in a send call.
+If this variable is set to a non-zero value, this amount is limited by the minimum
+of this variable and a quarter of the send buffer size.
+If not set or set to zero, the default is a quarter of the send buffer size.
+.TP
+.B sctp_do_not_use_eeor
+Some platforms support the sending of large user message. On these platforms
+every HTTP message is sent as a single SCTP user message. This can be tured off
+by setting this variable.
 .SH "SEE ALSO"
 redirect(8), ssi(8), makeweb(1), htpasswd(1), syslogtocern(8), weblog_parse(1), http_get(1)
 .SH THANKS

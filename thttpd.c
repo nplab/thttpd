@@ -88,7 +88,10 @@ static char* user;
 static char* charset;
 static char* p3p;
 static int max_age;
-
+#ifdef USE_SCTP
+static size_t send_at_once_limit;
+static int use_eeor;
+#endif
 
 typedef struct {
     char* pattern;
@@ -644,6 +647,9 @@ main( int argc, char** argv )
 	hostname,
 	gotv4 ? &sa4 : (httpd_sockaddr*) 0, gotv6 ? &sa6 : (httpd_sockaddr*) 0,
 	port, cgi_pattern, cgi_limit, charset, p3p, max_age, cwd, no_log, logfp,
+#ifdef USE_SCTP
+	send_at_once_limit, use_eeor,
+#endif
 	no_symlink_check, do_vhost, do_global_passwd, url_pattern,
 	local_pattern, no_empty_referrers );
     if ( hs == (httpd_server*) 0 )
@@ -906,6 +912,14 @@ parse_args( int argc, char** argv )
     charset = DEFAULT_CHARSET;
     p3p = "";
     max_age = -1;
+#ifdef USE_SCTP
+    send_at_once_limit = 0;
+#ifdef SCTP_EXPLICIT_EOR
+    use_eeor = 1;
+#else
+    use_eeor = 0;
+#endif
+#endif
     argn = 1;
     while ( argn < argc && argv[argn][0] == '-' )
 	{
@@ -1003,6 +1017,15 @@ parse_args( int argc, char** argv )
 	    }
 	else if ( strcmp( argv[argn], "-D" ) == 0 )
 	    debug = 1;
+#ifdef USE_SCTP
+	else if ( strcmp( argv[argn], "-B" ) == 0 && argn + 1 < argc )
+	    {
+	    ++argn;
+	    send_at_once_limit = atoi( argv[argn] );
+	    }
+	else if ( strcmp( argv[argn], "-S" ) == 0 )
+	    use_eeor = 0;
+#endif
 	else
 	    usage();
 	++argn;
@@ -1016,7 +1039,11 @@ static void
 usage( void )
     {
     (void) fprintf( stderr,
+#ifdef USE_SCTP
+"usage:  %s [-C configfile] [-p port] [-d dir] [-r|-nor] [-dd data_dir] [-s|-nos] [-v|-nov] [-g|-nog] [-u user] [-c cgipat] [-t throttles] [-h host] [-l logfile] [-i pidfile] [-T charset] [-P P3P] [-M maxage] [-V] [-D] [-B size] [-S]\n",
+#else
 "usage:  %s [-C configfile] [-p port] [-d dir] [-r|-nor] [-dd data_dir] [-s|-nos] [-v|-nov] [-g|-nog] [-u user] [-c cgipat] [-t throttles] [-h host] [-l logfile] [-i pidfile] [-T charset] [-P P3P] [-M maxage] [-V] [-D]\n",
+#endif
 	argv0 );
     exit( 1 );
     }
@@ -1191,6 +1218,18 @@ read_config( char* filename )
 		value_required( name, value );
 		max_age = atoi( value );
 		}
+#ifdef USE_SCTP
+	    else if ( strcasecmp( name, "sctp_send_at_once_limit" ) == 0 )
+		{
+		value_required( name, value );
+		send_at_once_limit = atoi( value );
+		}
+	    else if ( strcasecmp( name, "sctp_do_not_use_eeor" ) == 0 )
+		{
+		no_value_required( name, value );
+		use_eeor = 0;
+		}
+#endif
 	    else
 		{
 		(void) fprintf(

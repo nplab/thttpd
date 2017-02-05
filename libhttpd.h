@@ -87,6 +87,8 @@ typedef struct {
     int listen4_fd, listen6_fd;
 #ifdef USE_SCTP
     int listensctp_fd;
+    size_t send_at_once_limit;
+    int use_eeor;
 #endif
     int no_log;
     FILE* logfp;
@@ -191,8 +193,12 @@ httpd_server* httpd_initialize(
     char* hostname, httpd_sockaddr* sa4P, httpd_sockaddr* sa6P,
     unsigned short port, char* cgi_pattern, int cgi_limit, char* charset,
     char* p3p, int max_age, char* cwd, int no_log, FILE* logfp,
+#ifdef USE_SCTP
+    size_t send_at_once_limit, int use_eeor,
+#endif
     int no_symlink_check, int vhost, int global_passwd, char* url_pattern,
-    char* local_pattern, int no_empty_referrers );
+    char* local_pattern, int no_empty_referrers
+ );
 
 /* Change the log file. */
 void httpd_set_logfp( httpd_server* hs, FILE* logfp );
