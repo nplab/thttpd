@@ -1,6 +1,7 @@
 extras
-cgi-src
 cgi-src/Makefile
+cgi-src/he
+cgi-src/he.o
 cgi-src/phf
 cgi-src/phf.o
 cgi-src/redirect

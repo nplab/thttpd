@@ -40,7 +40,7 @@ LIBS =		@LIBS@
 NETLIBS =	@V_NETLIBS@
 INSTALL =	@INSTALL@
 
-CLEANFILES =	*.o redirect ssi phf
+CLEANFILES =	*.o redirect ssi phf he
 
 @SET_MAKE@
 
@@ -48,7 +48,7 @@ CLEANFILES =	*.o redirect ssi phf
 	@rm -f $@
 	$(CC) $(CFLAGS) -c $*.c
 
-all:		redirect ssi phf
+all:		redirect ssi phf he
 
 redirect:	redirect.o
 	$(CC) $(LDFLAGS) $(STATICFLAG) redirect.o $(LIBS) -o redirect
@@ -60,6 +60,9 @@ ssi.o:		../match.h
 
 phf:		phf.o
 	$(CC) $(LDFLAGS) $(STATICFLAG) phf.o $(LIBS) -o phf
+
+he:		he.o
+	$(CC) $(LDFLAGS) $(STATICFLAG) he.o $(LIBS) -o he
 
 strerror.o:
 	@rm -f strerror.o
@@ -78,6 +81,8 @@ install:	all
 	cp ssi.8 $(MANDIR)/man8/ssi.8
 	rm -f $(CGIBINDIR)/phf
 	cp phf $(CGIBINDIR)/phf
+	rm -f $(CGIBINDIR)/he
+	cp he $(CGIBINDIR)/he
 
 clean:
 	rm -f $(CLEANFILES)
