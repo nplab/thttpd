@@ -33,6 +33,7 @@
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #ifdef HAVE_NETINET_SCTP_H
 #include <netinet/sctp.h>
 #endif
@@ -193,6 +194,9 @@ httpd_server* httpd_initialize(
     char* hostname, httpd_sockaddr* sa4P, httpd_sockaddr* sa6P,
     unsigned short port, char* cgi_pattern, int cgi_limit, char* charset,
     char* p3p, int max_age, char* cwd, int no_log, FILE* logfp,
+#ifdef TCP_FASTOPEN
+    int fastopen,
+#endif
 #ifdef USE_SCTP
     size_t send_at_once_limit, int use_eeor,
 #endif

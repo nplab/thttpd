@@ -88,6 +88,9 @@ static char* user;
 static char* charset;
 static char* p3p;
 static int max_age;
+#ifdef TCP_FASTOPEN
+static int fastopen;
+#endif
 #ifdef USE_SCTP
 static size_t send_at_once_limit;
 static int use_eeor;
@@ -647,6 +650,9 @@ main( int argc, char** argv )
 	hostname,
 	gotv4 ? &sa4 : (httpd_sockaddr*) 0, gotv6 ? &sa6 : (httpd_sockaddr*) 0,
 	port, cgi_pattern, cgi_limit, charset, p3p, max_age, cwd, no_log, logfp,
+#ifdef TCP_FASTOPEN
+	fastopen,
+#endif
 #ifdef USE_SCTP
 	send_at_once_limit, use_eeor,
 #endif
@@ -912,6 +918,9 @@ parse_args( int argc, char** argv )
     charset = DEFAULT_CHARSET;
     p3p = "";
     max_age = -1;
+#ifdef TCP_FASTOPEN
+    fastopen = 0;
+#endif
 #ifdef USE_SCTP
     send_at_once_limit = 0;
 #ifdef SCTP_EXPLICIT_EOR
@@ -1100,6 +1109,13 @@ read_config( char* filename )
 		value_required( name, value );
 		port = (unsigned short) atoi( value );
 		}
+#ifdef TCP_FASTOPEN
+	    else if ( strcasecmp( name, "fastopen" ) == 0 )
+		{
+		no_value_required( name, value );
+		fastopen = 1;
+		}
+#endif
 	    else if ( strcasecmp( name, "dir" ) == 0 )
 		{
 		value_required( name, value );

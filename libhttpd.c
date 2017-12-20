@@ -130,7 +130,11 @@ typedef int socklen_t;
 /* Forwards. */
 static void check_options( void );
 static void free_httpd_server( httpd_server* hs );
+#ifdef TCP_FASTOPEN
+static int initialize_listen_socket( httpd_sockaddr* saP, int fastopen );
+#else
 static int initialize_listen_socket( httpd_sockaddr* saP );
+#endif
 #ifdef USE_SCTP
 static int initialize_listen_sctp_socket( httpd_sockaddr* sa4P, httpd_sockaddr* sa6P );
 #endif
@@ -243,6 +247,9 @@ httpd_initialize(
     char* hostname, httpd_sockaddr* sa4P, httpd_sockaddr* sa6P,
     unsigned short port, char* cgi_pattern, int cgi_limit, char* charset,
     char* p3p, int max_age, char* cwd, int no_log, FILE* logfp,
+#ifdef TCP_FASTOPEN
+    int fastopen,
+#endif
 #ifdef USE_SCTP
     size_t send_at_once_limit, int use_eeor,
 #endif
@@ -359,11 +366,19 @@ httpd_initialize(
     if ( sa6P == (httpd_sockaddr*) 0 )
 	hs->listen6_fd = -1;
     else
+#ifdef TCP_FASTOPEN
+	hs->listen6_fd = initialize_listen_socket( sa6P, fastopen );
+#else
 	hs->listen6_fd = initialize_listen_socket( sa6P );
+#endif
     if ( sa4P == (httpd_sockaddr*) 0 )
 	hs->listen4_fd = -1;
     else
+#ifdef TCP_FASTOPEN
+	hs->listen4_fd = initialize_listen_socket( sa4P, fastopen );
+#else
 	hs->listen4_fd = initialize_listen_socket( sa4P );
+#endif
 #ifdef USE_SCTP
     hs->send_at_once_limit = send_at_once_limit;
     hs->use_eeor = use_eeor;
@@ -399,7 +414,11 @@ httpd_initialize(
 
 
 static int
+#ifdef TCP_FASTOPEN
+initialize_listen_socket( httpd_sockaddr* saP, int fastopen )
+#else
 initialize_listen_socket( httpd_sockaddr* saP )
+#endif
     {
     int listen_fd;
     int on, flags;
@@ -463,6 +482,18 @@ initialize_listen_socket( httpd_sockaddr* saP )
 	(void) close( listen_fd );
 	return -1;
 	}
+
+#ifdef TCP_FASTOPEN
+    /* Enable TCP FO, if possible */
+    if (fastopen)
+    {
+	on = 1; /* XXXMT: On FreeBSD it is a flag, but not on Linux */
+	if (setsockopt( listen_fd, IPPROTO_TCP, TCP_FASTOPEN, (char*) &on, sizeof(on) ) < 0 )
+	    {
+	    syslog( LOG_WARNING, "Can't enable TCP fastopen - %m" );
+	    }
+    }
+#endif
 
     /* Use accept filtering, if available. */
 #ifdef SO_ACCEPTFILTER
