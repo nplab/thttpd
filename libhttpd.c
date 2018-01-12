@@ -421,7 +421,7 @@ initialize_listen_socket( httpd_sockaddr* saP )
 #endif
     {
     int listen_fd;
-    int on, flags;
+    int optval, flags;
 
     /* Check sockaddr. */
     if ( ! sockaddr_check( saP ) )
@@ -440,15 +440,15 @@ initialize_listen_socket( httpd_sockaddr* saP )
     (void) fcntl( listen_fd, F_SETFD, 1 );
 
     /* Allow reuse of local addresses. */
-    on = 1;
+    optval = 1;
     if ( setsockopt(
-	     listen_fd, SOL_SOCKET, SO_REUSEADDR, (char*) &on,
-	     sizeof(on) ) < 0 )
+	     listen_fd, SOL_SOCKET, SO_REUSEADDR, (char*) &optval,
+	     sizeof(int) ) < 0 )
 	syslog( LOG_CRIT, "setsockopt SO_REUSEADDR - %m" );
 
     /* Make v6 sockets v6 only */
     if ( saP->sa.sa_family == AF_INET6 )
-	if ( setsockopt( listen_fd, IPPROTO_IPV6, IPV6_V6ONLY, (char*) &on, sizeof(on) ) < 0 )
+	if ( setsockopt( listen_fd, IPPROTO_IPV6, IPV6_V6ONLY, (char*) &optval, sizeof(int) ) < 0 )
 	    syslog( LOG_CRIT, "setsockopt IPV6_V6ONLY - %m" );
 
     /* Bind to it. */
@@ -487,8 +487,12 @@ initialize_listen_socket( httpd_sockaddr* saP )
     /* Enable TCP FO, if possible */
     if (fastopen)
     {
-	on = 1; /* XXXMT: On FreeBSD it is a flag, but not on Linux */
-	if (setsockopt( listen_fd, IPPROTO_TCP, TCP_FASTOPEN, (char*) &on, sizeof(on) ) < 0 )
+#ifdef __linux__
+	optval = LISTEN_BACKLOG/2;
+#else
+	optval = 1;
+#endif
+	if (setsockopt( listen_fd, IPPROTO_TCP, TCP_FASTOPEN, (char*) &optval, sizeof(int) ) < 0 )
 	    {
 	    syslog( LOG_WARNING, "Can't enable TCP fastopen - %m" );
 	    }
