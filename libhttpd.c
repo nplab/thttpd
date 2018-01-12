@@ -3439,6 +3439,7 @@ make_envp( httpd_conn* hc )
     if ( !hc->is_sctp )
 #else
     if ( 1 )
+#endif
 	{
 	int optval;
 	socklen_t optlen;
@@ -3447,7 +3448,6 @@ make_envp( httpd_conn* hc )
 	if ( getsockopt( hc->conn_fd, IPPROTO_TCP, TCP_FASTOPEN, &optval, &optlen ) == 0 )
 		envp[envn++] = build_env( "FASTOPEN=%s", optval != 0 ? "YES" : "NO" );
 	}
-#endif
 #endif
 #ifdef USE_SCTP
     if ( hc->is_sctp )
