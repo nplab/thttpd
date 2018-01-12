@@ -1026,6 +1026,10 @@ parse_args( int argc, char** argv )
 	    }
 	else if ( strcmp( argv[argn], "-D" ) == 0 )
 	    debug = 1;
+#ifdef TCP_FASTOPEN
+	else if ( strcmp( argv[argn], "-F" ) == 0 )
+	    fastopen = 1;
+#endif
 #ifdef USE_SCTP
 	else if ( strcmp( argv[argn], "-B" ) == 0 && argn + 1 < argc )
 	    {
@@ -1048,11 +1052,14 @@ static void
 usage( void )
     {
     (void) fprintf( stderr,
-#ifdef USE_SCTP
-"usage:  %s [-C configfile] [-p port] [-d dir] [-r|-nor] [-dd data_dir] [-s|-nos] [-v|-nov] [-g|-nog] [-u user] [-c cgipat] [-t throttles] [-h host] [-l logfile] [-i pidfile] [-T charset] [-P P3P] [-M maxage] [-V] [-D] [-B size] [-S]\n",
-#else
-"usage:  %s [-C configfile] [-p port] [-d dir] [-r|-nor] [-dd data_dir] [-s|-nos] [-v|-nov] [-g|-nog] [-u user] [-c cgipat] [-t throttles] [-h host] [-l logfile] [-i pidfile] [-T charset] [-P P3P] [-M maxage] [-V] [-D]\n",
+"usage:  %s [-C configfile] [-p port] [-d dir] [-r|-nor] [-dd data_dir] [-s|-nos] [-v|-nov] [-g|-nog] [-u user] [-c cgipat] [-t throttles] [-h host] [-l logfile] [-i pidfile] [-T charset] [-P P3P] [-M maxage] [-V] [-D]"
+#ifdef TCP_FASTOPEN
+" [-F]"
 #endif
+#ifdef USE_SCTP
+" [-B size] [-S]"
+#endif
+"\n",
 	argv0 );
     exit( 1 );
     }

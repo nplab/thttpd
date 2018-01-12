@@ -35,6 +35,7 @@ thttpd - tiny/turbo/throttling HTTP server
 .IR maxage ]
 .RB [ -V ]
 .RB [ -D ]
+.RB [ -F ]
 .RB [ -B
 .IR size ]
 .RB [ -S ]
@@ -193,6 +194,12 @@ in a send call. If it is set to a non-zero value, this amount is
 limited by the minimum of this vlaue and a quarter of the send buffer size.
 If not set or set to zero, the default is a quarter of the send buffer size.
 The config-file option name for this flag is "sctp_send_at_once_limit".
+.TP
+.B -F
+This option is only supported if the operating system supports TCP
+fast open.
+TCP fast open is disabled by default. It can be enabled by setting the option.
+The config-file option name for this flag is "fastopen".
 .TP
 .B -S
 This option is only supported if the operating system supports SCTP.
