@@ -3430,6 +3430,21 @@ make_envp( httpd_conn* hc )
     else
 	(void) my_snprintf( buf, sizeof(buf), "%d", (int) ntohs( hc->client_addr.sa_in6.sin6_port ) );
     envp[envn++] = build_env( "REMOTE_PORT=%s", buf );
+#if defined(TCP_FASTOPEN) && defined(__FreeBSD__)
+#ifdef USE_SCTP
+    if ( !hc->is_sctp )
+#else
+    if ( 1 )
+	{
+	int optval;
+	socklen_t optlen;
+
+	optlen = (socklen_t)sizeof(int);
+	if ( getsockopt( hc->conn_fd, IPPROTO_TCP, TCP_FASTOPEN, &optval, &optlen ) == 0 )
+		envp[envn++] = build_env( "FASTOPEN=%s", optval != 0 ? "YES" : "NO" );
+	}
+#endif
+#endif
 #ifdef USE_SCTP
     if ( hc->is_sctp )
 	{
