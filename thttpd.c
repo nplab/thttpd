@@ -1877,7 +1877,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 #endif
 	    }
 #endif
-	sndrcvinfo->sinfo_ppid = htonl(0);
+	sndrcvinfo->sinfo_ppid = htonl(HTTP_OVER_SCTP_PPID);
 	sndrcvinfo->sinfo_context = 0;
 	sndrcvinfo->sinfo_timetolive = 0;
 	sndrcvinfo->sinfo_assoc_id = 0;
