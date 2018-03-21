@@ -1837,7 +1837,7 @@ handle_send( connecttab* c, struct timeval* tvP )
     msg.msg_iov = iv;
     msg.msg_iovlen = 2;
 #ifdef USE_SCTP
-    if ( hc->is_sctp && hc->use_eeor )
+    if ( hc->is_sctp )
 	{
 	cmsg = (struct cmsghdr *)cmsgbuf;
 	cmsg->cmsg_level = IPPROTO_SCTP;
@@ -1850,7 +1850,8 @@ handle_send( connecttab* c, struct timeval* tvP )
 #ifdef SCTP_EXPLICIT_EOR
 	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
 	    {
-	    sndinfo->snd_flags |= SCTP_EOR;
+	    if ( hc->use_eeor )
+		sndinfo->snd_flags |= SCTP_EOR;
 #ifdef SCTP_SACK_IMMEDIATELY
 	    sndinfo->snd_flags |= SCTP_SACK_IMMEDIATELY;
 #endif
@@ -1871,7 +1872,8 @@ handle_send( connecttab* c, struct timeval* tvP )
 #ifdef SCTP_EXPLICIT_EOR
 	if ( c->end_byte_index - c->next_byte_index <= max_bytes )
 	    {
-	    sndrcvinfo->sinfo_flags |= SCTP_EOR;
+	    if ( hc->use_eeor )
+		sndinfo->snd_flags |= SCTP_EOR;
 #ifdef SCTP_SACK_IMMEDIATELY
 	    sndrcvinfo->sinfo_flags |= SCTP_SACK_IMMEDIATELY;
 #endif
