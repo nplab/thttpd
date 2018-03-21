@@ -3296,7 +3296,7 @@ mode  links    bytes  last-changed  name\n\
 	    if ( hc->is_sctp )
 		{
 		const char *trailer = "    </pre>\n  </body>\n</html>\n";
-		(void) httpd_write_sctp( hc->conn_fd, trailer, strlen(trailer), hc->use_eeor, 1, 0, 0 );
+		(void) httpd_write_sctp( hc->conn_fd, trailer, strlen(trailer), hc->use_eeor, 1, htonl(HTTP_OVER_SCTP_PPID), 0 );
 		}
 	    else
 		(void) dprintf( hc->conn_fd, "    </pre>\n  </body>\n</html>\n" );
@@ -4883,7 +4883,7 @@ httpd_write_fully_sctp( int fd, const char * buf, size_t nbytes,
 	    nwrite = nbytes - nwritten;
 	    }
 
-	r = httpd_write_sctp( fd, (void *)(buf + nwritten), nwrite, use_eeor, eor, 0, 0 );
+	r = httpd_write_sctp( fd, (void *)(buf + nwritten), nwrite, use_eeor, eor, htonl(HTTP_OVER_SCTP_PPID), 0 );
 
 	if ( r < 0 && ( errno == EINTR || errno == EAGAIN ) )
 	    {

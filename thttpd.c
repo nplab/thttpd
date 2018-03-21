@@ -1857,7 +1857,7 @@ handle_send( connecttab* c, struct timeval* tvP )
 
 	    }
 #endif
-	sndinfo->snd_ppid = htonl(0);
+	sndinfo->snd_ppid = htonl(HTTP_OVER_SCTP_PPID);
 	sndinfo->snd_context = 0;
 	sndinfo->snd_assoc_id = 0;
 	msg.msg_control = cmsg;
