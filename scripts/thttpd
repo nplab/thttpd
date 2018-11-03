@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# thttpd.sh - startup script for thttpd on FreeBSD
+# thttpd - startup script for thttpd on FreeBSD
 #
 # This goes in /usr/local/etc/rc.d and gets run at boot-time.
 #
