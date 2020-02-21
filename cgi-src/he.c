@@ -34,6 +34,7 @@ main(void)
 	char *remote_addr, *remote_port, *server_name, *server_port;
 	char *transport_protocol;
 	char *fastopen;
+	char *tcp_timestamp, *tcp_sack, *tcp_window_scaling, *tcp_ecn;
 
 	if ((remote_addr = getenv("REMOTE_ADDR")) == NULL)
 		return (-1);
@@ -46,6 +47,10 @@ main(void)
 	if ((transport_protocol = getenv("TRANSPORT_PROTOCOL")) == NULL)
 		return (-1);
 	fastopen = getenv("FASTOPEN");
+	tcp_timestamp = getenv("TCP_TIMESTAMPS");
+	tcp_sack = getenv("TCP_SACK");
+	tcp_window_scaling = getenv("TCP_WINDOW_SCALING");
+	tcp_ecn = getenv("TCP_ECN");
 
 	printf("Content-type: text/html\r\n"
 	       "\r\n"
@@ -61,6 +66,22 @@ main(void)
 	if (fastopen != NULL)
 		printf("<p>Fast open was%s used.</p>\n",
 		       strcmp(fastopen, "YES") != 0 ? " not" : "");
+	if (tcp_timestamp != NULL) {
+		printf("<p>TCP timestamp support was%s negotiated.</p>\n",
+		       strcmp(tcp_timestamp, "YES") != 0 ? " not" : "");
+	}
+	if (tcp_sack != NULL) {
+		printf("<p>TCP SACK support was%s negotiated.</p>\n",
+		       strcmp(tcp_sack, "YES") != 0 ? " not" : "");
+	}
+	if (tcp_window_scaling != NULL) {
+		printf("<p>TCP window scaling  was%s negotiated.</p>\n",
+		       strcmp(tcp_window_scaling, "YES") != 0 ? " not" : "");
+	}
+	if (tcp_ecn != NULL) {
+		printf("<p>TCP ECN support was%s negotiated.</p>\n",
+		       strcmp(tcp_ecn, "YES") != 0 ? " not" : "");
+	}
 	printf("</body>\n"
 	       "</html>\n");
 	return (0);

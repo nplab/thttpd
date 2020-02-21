@@ -3446,9 +3446,46 @@ make_envp( httpd_conn* hc )
 
 	optlen = (socklen_t)sizeof(int);
 	if ( getsockopt( hc->conn_fd, IPPROTO_TCP, TCP_FASTOPEN, &optval, &optlen ) == 0 )
-		envp[envn++] = build_env( "FASTOPEN=%s", optval != 0 ? "YES" : "NO" );
+	    envp[envn++] = build_env( "FASTOPEN=%s", optval != 0 ? "YES" : "NO" );
 	}
 #endif
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__linux__)
+#ifdef USE_SCTP
+    if ( !hc->is_sctp )
+#else
+    if ( 1 )
+#endif
+	{
+#if defined(__APPLE__)
+	struct tcp_connection_info info;
+	socklen_t optlen;
+
+	optlen = (socklen_t)sizeof(struct tcp_connection_info);
+	if ( getsockopt( hc->conn_fd, IPPROTO_TCP, TCP_CONNECTION_INFO, &info, &optlen ) == 0 )
+	    {
+	    envp[envn++] = build_env( "TCP_TIMESTAMPS=%s", (info.tcpi_options & TCPCI_OPT_TIMESTAMPS) != 0 ? "YES" : "NO" );
+	    envp[envn++] = build_env( "TCP_SACK=%s", (info.tcpi_options & TCPCI_OPT_SACK) != 0 ? "YES" : "NO" );
+	    envp[envn++] = build_env( "TCP_WINDOW_SCALING=%s", (info.tcpi_options & TCPCI_OPT_WSCALE) != 0 ? "YES" : "NO" );
+	    envp[envn++] = build_env( "TCP_ECN=%s", (info.tcpi_options & TCPCI_OPT_ECN) != 0 ? "YES" : "NO" );
+	    }
+	}
+#endif
+#if defined(__FreeBSD__) || defined(__linux__)
+	struct tcp_info info;
+	socklen_t optlen;
+
+	optlen = (socklen_t)sizeof(struct tcp_info);
+	if ( getsockopt( hc->conn_fd, IPPROTO_TCP, TCP_INFO, &info, &optlen ) == 0 )
+	    {
+	    envp[envn++] = build_env( "TCP_TIMESTAMPS=%s", (info.tcpi_options & TCPI_OPT_TIMESTAMPS) != 0 ? "YES" : "NO" );
+	    envp[envn++] = build_env( "TCP_SACK=%s", (info.tcpi_options & TCPI_OPT_SACK) != 0 ? "YES" : "NO" );
+	    envp[envn++] = build_env( "TCP_WINDOW_SCALING=%s", (info.tcpi_options & TCPI_OPT_WSCALE) != 0 ? "YES" : "NO" );
+	    envp[envn++] = build_env( "TCP_ECN=%s", (info.tcpi_options & TCPI_OPT_ECN) != 0 ? "YES" : "NO" );
+	    }
+	}
+#endif
+#endif
+
 #ifdef USE_SCTP
     if ( hc->is_sctp )
 	{
