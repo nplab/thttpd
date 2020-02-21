@@ -75,7 +75,7 @@ main(void)
 		       strcmp(tcp_sack, "YES") != 0 ? " not" : "");
 	}
 	if (tcp_window_scaling != NULL) {
-		printf("<p>TCP window scaling  was%s negotiated.</p>\n",
+		printf("<p>TCP window scaling was%s negotiated.</p>\n",
 		       strcmp(tcp_window_scaling, "YES") != 0 ? " not" : "");
 	}
 	if (tcp_ecn != NULL) {
