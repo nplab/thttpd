@@ -19,10 +19,11 @@
 
 . /etc/rc.subr
 
+sig_stop='USR1'
+
 name='thttpd'
 rcvar='thttpd_enable'
 start_precmd='thttpd_precmd'
-stop_cmd='thttpd_stop'
 thttpd_enable_defval='NO'
 
 load_rc_config "$name"
@@ -37,11 +38,6 @@ thttpd_precmd ()
 		devfs -m "$thttpd_devfs" rule -s 1 applyset
 		devfs -m "$thttpd_devfs" rule -s 2 applyset
 	fi
-}
-
-thttpd_stop ()
-{
-	kill -USR1 `cat "$pidfile"`
 }
 
 run_rc_command "$1"
