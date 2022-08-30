@@ -1503,6 +1503,9 @@ httpd_method_str( int method )
 	case METHOD_GET: return "GET";
 	case METHOD_HEAD: return "HEAD";
 	case METHOD_POST: return "POST";
+	case METHOD_PUT: return "PUT";
+	case METHOD_DELETE: return "DELETE";
+	case METHOD_TRACE: return "TRACE";
 	default: return "UNKNOWN";
 	}
     }
