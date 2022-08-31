@@ -3495,7 +3495,34 @@ make_envp( httpd_conn* hc )
     if ( 1 )
 #endif
 	{
-	envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP" );
+	int remote_encaps_port;
+#ifdef SCTP_REMOTE_UDP_ENCAPS_PORT
+	socklen_t optlen;
+
+	optlen = (socklen_t)sizeof( int );
+	if ( getsockopt( hc->conn_fd, IPPROTO_TCP, TCP_REMOTE_UDP_ENCAPS_PORT, &remote_encaps_port, &optlen ) < 0 )
+	    remote_encaps_port = 0;
+#else
+	remote_encaps_port = 0;
+#endif
+	if ( remote_encaps_port > 0 )
+	    {
+#ifdef __FreeBSD__
+	    int local_encaps_port;
+	    size_t len;
+
+	    len = sizeof( int );
+	    if ( sysctlbyname( "net.inet.tcp.udp_tunneling_port", &local_encaps_port, &len, NULL, 0 ) < 0 )
+		local_encaps_port = 0;
+	    (void) my_snprintf( buf, sizeof(buf), "%d", local_encaps_port );
+	    envp[envn++] = build_env( "SERVER_UDP_ENCAPS_PORT=%s", buf );
+#endif
+	    (void) my_snprintf( buf, sizeof(buf), "%d", remote_encaps_port );
+	    envp[envn++] = build_env( "REMOTE_UDP_ENCAPS_PORT=%s", buf );
+	    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP/UDP" );
+	    }
+	else
+	    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP" );
 	}
     else
 	{
