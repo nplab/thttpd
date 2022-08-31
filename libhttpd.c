@@ -3490,7 +3490,14 @@ make_envp( httpd_conn* hc )
 #endif
 
 #ifdef USE_SCTP
-    if ( hc->is_sctp )
+    if ( !hc->is_sctp )
+#else
+    if ( 1 )
+#endif
+	{
+	envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP" );
+	}
+    else
 	{
 	uint16_t remote_encaps_port;
 #ifdef SCTP_REMOTE_UDP_ENCAPS_PORT
@@ -3526,11 +3533,6 @@ make_envp( httpd_conn* hc )
 	else
 	    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "SCTP" );
 	}
-    else
-	envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP" );
-#else
-    envp[envn++] = build_env( "TRANSPORT_PROTOCOL=%s", "TCP" );
-#endif
     if ( hc->referrer[0] != '\0' )
 	{
 	envp[envn++] = build_env( "HTTP_REFERER=%s", hc->referrer );
