@@ -33,6 +33,7 @@ main(void)
 {
 	char *remote_addr, *remote_port, *server_name, *server_port;
 	char *transport_protocol;
+	char *remote_udp_encaps_port, *server_udp_encaps_port;
 	char *fastopen;
 	char *tcp_timestamp, *tcp_sack, *tcp_window_scaling, *tcp_ecn;
 
@@ -46,6 +47,8 @@ main(void)
 		return (-1);
 	if ((transport_protocol = getenv("TRANSPORT_PROTOCOL")) == NULL)
 		return (-1);
+	remote_udp_encaps_port = getenv("REMOTE_UDP_ENCAPS_PORT");
+	server_udp_encaps_port = getenv("SERVER_UDP_ENCAPS_PORT");
 	fastopen = getenv("FASTOPEN");
 	tcp_timestamp = getenv("TCP_TIMESTAMPS");
 	tcp_sack = getenv("TCP_SACK");
@@ -63,6 +66,9 @@ main(void)
 	       "<body>\n"
 	       "<p>This page was requested from %s:%s and served by %s:%s using %s as the transport protocol.</p>\n",
 	       remote_addr, remote_port, server_name, server_port, transport_protocol);
+	if (remote_udp_encaps_port != NULL && server_udp_encaps_port != NULL)
+		printf("<p>UDP encapsulation ports: local = %s, remote = %s.</p>\n",
+		       server_udp_encaps_port, remote_udp_encaps_port);
 	if (fastopen != NULL)
 		printf("<p>Fast open was%s used.</p>\n",
 		       strcmp(fastopen, "YES") != 0 ? " not" : "");
