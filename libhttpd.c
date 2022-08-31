@@ -3496,7 +3496,7 @@ make_envp( httpd_conn* hc )
 #endif
 	{
 	int remote_encaps_port;
-#ifdef SCTP_REMOTE_UDP_ENCAPS_PORT
+#ifdef TCP_REMOTE_UDP_ENCAPS_PORT
 	socklen_t optlen;
 
 	optlen = (socklen_t)sizeof( int );
