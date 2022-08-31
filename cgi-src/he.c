@@ -37,16 +37,21 @@ main(void)
 	char *fastopen;
 	char *tcp_timestamp, *tcp_sack, *tcp_window_scaling, *tcp_ecn;
 
-	if ((remote_addr = getenv("REMOTE_ADDR")) == NULL)
+	if ((remote_addr = getenv("REMOTE_ADDR")) == NULL) {
 		return (-1);
-	if ((remote_port = getenv("REMOTE_PORT")) == NULL)
+	}
+	if ((remote_port = getenv("REMOTE_PORT")) == NULL) {
 		return (-1);
-	if ((server_name = getenv("SERVER_NAME")) == NULL)
+	}
+	if ((server_name = getenv("SERVER_NAME")) == NULL) {
 		return (-1);
-	if ((server_port = getenv("SERVER_PORT")) == NULL)
+	}
+	if ((server_port = getenv("SERVER_PORT")) == NULL) {
 		return (-1);
-	if ((transport_protocol = getenv("TRANSPORT_PROTOCOL")) == NULL)
+	}
+	if ((transport_protocol = getenv("TRANSPORT_PROTOCOL")) == NULL) {
 		return (-1);
+	}
 	remote_udp_encaps_port = getenv("REMOTE_UDP_ENCAPS_PORT");
 	server_udp_encaps_port = getenv("SERVER_UDP_ENCAPS_PORT");
 	fastopen = getenv("FASTOPEN");
@@ -66,12 +71,19 @@ main(void)
 	       "<body>\n"
 	       "<p>This page was requested from %s:%s and served by %s:%s using %s as the transport protocol.</p>\n",
 	       remote_addr, remote_port, server_name, server_port, transport_protocol);
-	if (remote_udp_encaps_port != NULL && server_udp_encaps_port != NULL)
-		printf("<p>UDP encapsulation ports: local = %s, remote = %s.</p>\n",
-		       server_udp_encaps_port, remote_udp_encaps_port);
-	if (fastopen != NULL)
+	if (remote_udp_encaps_port != NULL) {
+		if (server_udp_encaps_port != NULL) {
+			printf("<p>UDP encapsulation ports: local = %s, remote = %s.</p>\n",
+			       server_udp_encaps_port, remote_udp_encaps_port);
+		} else {
+			printf("<p>UDP encapsulation port: remote = %s.</p>\n",
+			       remote_udp_encaps_port);
+		}
+	}
+	if (fastopen != NULL) {
 		printf("<p>Fast open was%s used.</p>\n",
 		       strcmp(fastopen, "YES") != 0 ? " not" : "");
+	}
 	if (tcp_timestamp != NULL) {
 		printf("<p>TCP timestamp support was%s negotiated.</p>\n",
 		       strcmp(tcp_timestamp, "YES") != 0 ? " not" : "");
